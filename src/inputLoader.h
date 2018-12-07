@@ -31,8 +31,8 @@ public:
 	limits Nlim;
 	limits Hlim;
 	double l0;
-	std::vector<std::vector<double>> dens;
-	Dat3D<PointValue> dat;
+	std::vector<std::vector<Point>> dens;
+	Dat3D<Point> dat;
 	bool noGK;
 	double dotPotentialRad = 1e8;
 	std::vector<std::string> fnames;
@@ -43,15 +43,21 @@ public:
 
 	bool noInvFileOrder = false;
 	bool transSolver = false;
-	bool dat2D = false;
-	bool grdFile = false;
 
-	//input: -dat[2D/3D] (file.dat) [-Hf (val)] -Hfrom (val) -Hto (val) -Hn (val) -l0 (val) [-dens (directory)] [-toRel] [-densVal (val)] 
+	//input: -dat3D (file.dat) [-Hf (val)] -Hfrom (val) -Hto (val) -Hn (val) -l0 (val) [-dens (directory)]
+		//[-qw (filename)] [-qr (filename)] *** write or read preprocessing to or from file
 		//[-DPR (val)] *** point potential replace radius
-		// if "-dens" is not specified: -Efrom -Eto -En -Nfrom -Nto -Nn [-densLayers (file.dat)]
 		// [-noInvFileOrder]
 		// [-transposeSolver]
 		// [-saveDatAs3D]
+		//dens:
+			// layer0_x.grd
+			// layer0_y.grd
+			// layer0_z.grd
+			// layer1_x.grd
+			// layer2_y.grd
+			// layer2_z.grd
+			// ...
 	Input(int argc, char *argv[]) {
 		InputParser ip(argc, argv);
 
@@ -70,68 +76,25 @@ public:
 			Grid g(fnames[0]);
 			Elim = {g.xLL, g.xLL + (g.nCol-1)*g.xSize, g.nCol};
 			Nlim = {g.yLL, g.yLL + (g.nRow-1)*g.ySize, g.nRow};
-			if(fnames.size() < Hlim.n)
-				throw std::runtime_error("Not enough density files have been found");
-			if(ip.exists("toRel")) relDens(dens);
-		} else {
-			ip["Efrom"] >> Elim.lower;
-			ip["Eto"] >> Elim.upper;
-			ip["En"] >> Elim.n;
-			ip["Nfrom"] >> Nlim.lower;
-			ip["Nto"] >> Nlim.upper;
-			ip["Nn"] >> Nlim.n;
-		}
+			if(fnames.size() < Hlim.n*3)
+				throw runtime_error("Not enough density files have been found");
+		} else throw runtime_error("No density specified");
 
 		ip["l0"] >> l0;
 		l0 = toRad(l0);
 
-		if(ip.exists("densLayers")) {
-			std::string fname;
-			ip["densLayers"] >> fname;
-			Dat2D<> d(fname);
-			dens.clear();
-			d.forEach([&](Dat2D<>::Element &el){ dens.push_back(std::vector<double>(Elim.n*Nlim.n, el.p.y)); });
-		}
-
-		if(ip.exists("densVal")) {
-			double tmp;
-			ip["densVal"] >> tmp;
-			std::vector<double> l(Elim.n*Nlim.n, tmp);
-			dens = std::vector<std::vector<double>>(Hlim.n, l);
-			cout << "All densities are set to " << tmp << endl;
-		}
-
 		std::string datFname;
-		if (ip.exists("dat")) {
-			dat2D = true;
-			ip["dat"] >> datFname;
-		} else if (ip.exists("dat2D")) {
-			dat2D = true;
-			ip["dat2D"] >> datFname;
-		} else if (ip.exists("dat3D")) {
-			dat2D = false;
+		if (ip.exists("dat3D")) {
 			ip["dat3D"] >> datFname;
-		} else if (ip.exists("grd7")) {
-			dat2D = true;
-			grdFile = true;
-			ip["grd7"] >> grdFname;
-			datFname = grdFname;
-		} else throw std::runtime_error("No *.dat or *.grd file has been specified for the Field.");
-
+			dat.read(datFname);
+			if (ip.exists("Hf")) {
+				double Hf;
+				ip["Hf"] >> Hf;
+				for (auto &e : dat.es)
+					e.p.z = Hf;
+			}
+		} else throw runtime_error("No *.dat file has been specified.");
 		double Hf = 0;
-		if(grdFile) {
-			ip["Hf"] >> Hf;
-			Grid g(datFname);
-			grdCols = g.nCol;
-			grdRows = g.nRow;
-			dat.set(GDconv::toDat(g), Hf);
-			dat.fileName = datFname.replace(datFname.length() - 3, 3, "dat");
-			dat2D = !ip.exists("saveDatAs3D");
-		} else if (dat2D) {
-			ip["Hf"] >> Hf;
-			dat.set(Dat2D<>(datFname), Hf);
-			dat2D = !ip.exists("saveDatAs3D");
-		} else dat.read(datFname);
 
 		if (ip.exists("DPR"))
 			ip["DPR"] >> dotPotentialRad;
@@ -155,8 +118,16 @@ public:
 		if(!noInvFileOrder) std::sort(fnames.begin(), fnames.end(), std::less<>());
 		else std::sort(fnames.begin(), fnames.end(), std::greater<>());
 		dens.clear();
-		for (auto &i : fnames)
-			dens.push_back(Grid(i).data);
+		for (int i = 0; i < fnames.size(); i += 3) {
+			auto x = Grid(fnames[i]).data;
+			auto y = Grid(fnames[i+1]).data;
+			auto z = Grid(fnames[i+2]).data;
+			vector<Point> t;
+			for (int i = 0; i < x.size(); ++i)
+				//t.push_back({ x[i], 0, 0 });
+				t.push_back({x[i], y[i], z[i]});
+			dens.push_back(t);
+		}
 	}
 
 private:
@@ -183,17 +154,6 @@ private:
 		std::cerr << "Input error: " << str << std::endl;
 		std::cerr << "Program terminated." << std::endl;
 		exit(1);
-	}
-
-	void relDens(std::vector<std::vector<double>> &dens) {
-		for(auto &v : dens) {
-			double med = 0;
-			for(auto &d : v)
-				med += d;
-			med /= (double)v.size();
-			for(auto &d : v)
-				d -= med;
-		}
 	}
 };
 

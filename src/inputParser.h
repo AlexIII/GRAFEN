@@ -53,8 +53,12 @@ public:
 		try {
 			inp.at(key);
 			tmp = true;
-		}catch(...) {}
+		}catch(std::out_of_range &ex) {}
 		return tmp;
+	}
+
+	const std::map<std::string, std::string>& getMap() {
+		return inp;
 	}
 
 private:

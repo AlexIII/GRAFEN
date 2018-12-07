@@ -16,67 +16,47 @@ using std::endl;
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value)
 
-__host__ __device__ Point intTrAn(const Point &q, const Triangle &t) {
-	const Point a1 = t.p1 - q, a2 = t.p2 - q, a3 = t.p3 - q;
-	const Point a12 = t.p2 - t.p1, a23 = t.p3 - t.p2, a31 = t.p1 - t.p3;
-	const Point k = (a12*a23);
-	const Point K = k.norm();
+__host__ __device__ inline double tripleprod(const Point& o1, const Point& o2, const Point& o3) { return (o1 ^ (o2*o3)); }
 
-	const double pr = -M_PI_2*abs(a1^K);
+__host__ __device__ Point intTrAn(const Point &p0, const Triangle &t) {
+	Point res;
 
-	const Point A31 = a31.norm();
-	const Point A12 = a12.norm();
-	const Point A23 = a23.norm();
+	const Point a1 = t.p1 - p0;
+	const Point a2 = t.p2 - p0;
+	const Point a3 = t.p3 - p0;
+	const double a1m = a1.eqNorm();
+	const double a2m = a2.eqNorm();
+	const double a3m = a3.eqNorm();
+	const Point a12 = t.p2 - t.p1;
+	const Point a23 = t.p3 - t.p2;
+	const Point a31 = t.p1 - t.p3;
+	const double a12m = a12.eqNorm();
+	const double a23m = a23.eqNorm();
+	const double a31m = a31.eqNorm();
+	//if (a3m + a1m - a31m < 1e-9 || a1m + a2m - a12m < 1e-9 || a2m + a3m - a23m < 1e-9) return{ HUGE_VAL, HUGE_VAL, HUGE_VAL };
+	const Point N = t.normal();
 
-	double tmp1 = (A31^a3) + sqrt(a3^a3);
-	double uln1 = ((A31^a1) + sqrt(a1^a1)) / tmp1;
-	if (tmp1 > 1e-10 && uln1 >= 0) {
-		uln1 = (a1 ^ (A31*K))*log(uln1);
-	}
-	else {
-		uln1 = (-(A31^a1) + sqrt(a1^a1)) / (-(A31^a3) + sqrt(a3^a3));
-		uln1 = -(a1 ^ (A31*K))*log(uln1);
-	}
+	res = a31*(log((a3m + a1m + a31m) / (a3m + a1m - a31m)) / a31m);
+	res += a12*(log((a1m + a2m + a12m) / (a1m + a2m - a12m)) / a12m);
+	res += a23*(log((a2m + a3m + a23m) / (a2m + a3m - a23m)) / a23m);
+	res = N*res;
+	res += N*(2.0*atan2(tripleprod(a1, a2, a3), (a1m*a2m*a3m + a3m*(a1^a2) + a2m*(a1^a3) + a1m*(a2^a3))));
 
-	double tmp2 = (A12^a1) + sqrt(a1^a1);
-	double uln2 = ((A12^a2) + sqrt(a2^a2)) / tmp2;
-	if (tmp2 > 1e-10 && uln2 >= 0) {
-		uln2 = (a2 ^ (A12*K))*log(uln2);
-	}
-	else {
-		uln2 = (-(A12^a2) + sqrt(a2^a2)) / (-(A12^a1) + sqrt(a1^a1));
-		uln2 = -(a2 ^ (A12*K))*log(uln2);
-	}
-
-	double tmp3 = (A23^a2) + sqrt(a2^a2);
-	double uln3 = ((A23^a3) + sqrt(a3^a3)) / tmp3;
-	if (tmp3 > 1e-10 && uln3 >= 0) {
-		uln3 = (a3 ^ (A23*K))*log(uln3);
-	}
-	else {
-		uln3 = (-(A23^a3) + sqrt(a3^a3)) / (-(A23^a2) + sqrt(a2^a2));
-		uln3 = -(a3 ^ (A23*K))*log(uln3);
-	}
-
-	if (a1^K) {
-		uln1 -= (a1^K)*atan(((a31*a1) ^ (a12*a1)) / ((a1^k)*sqrt(a1^a1)));
-		uln2 -= (a2^K)*atan(((a12*a2) ^ (a23*a2)) / ((a2^k)*sqrt(a2^a2)));
-		uln3 -= (a3^K)*atan(((a23*a3) ^ (a31*a3)) / ((a3^k)*sqrt(a3^a3)));
-	}
-
-	return t.normal() *  (pr + uln1 + uln2 + uln3);
-}
-
-__host__ __device__ Point gMassPoint(const Point &p0, const double mass, const Point &mp) {
-	const double d = (mp - p0).eqNorm();
-	return ((mp - p0) / (d*d*d)) * mass;
+	return res;
 }
 
 __host__ __device__ Point intHexTr(const Point &p0, const HexahedronWid &h) {
 	Point sum;
-	for (int i = 0; i < 12; ++i)
-		sum += intTrAn(p0, h.getTri(i));
+	for (int i = 0; i < 12; ++i) {
+		const auto tri = h.getTri(i);
+		sum += intTrAn(p0, tri) * (tri.normal() ^ h.dens);
+	}
 	return sum;
+}
+
+__host__ __device__ Point mMassPoint(const Point &r, const Point &m) {
+	const double d = r.eqNorm();
+	return r * 3 * (r^m) / (d*d*d*d*d) - m / (d*d*d);
 }
 
 bool cuSolver::isCUDAavailable() {
@@ -175,7 +155,7 @@ public:
 		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
 		qsCUDA.assign(qbegin, qend);
 		qsCUDAprec.resize(tirBufSz);
-		std::vector<PointValue> tmp(qend - qbegin);
+		std::vector<PointValue<Point>> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
@@ -193,30 +173,30 @@ public:
 		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
 		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), Point(), thrust::plus<Point>(),
-			[=] __device__(const HexahedronWid& h, const PointValue &mp)->Point {
+			[=] __device__(const HexahedronWid& h, const PointValue<Point> &mp)->Point {
 			if ((mp - p0).eqNorm() > rad)
-				return gMassPoint(p0, mp.val, mp);
+				return mMassPoint(p0-mp, mp.val);
 			hPres[atomicAdd(cnt, 1)] = h;
 			return Point();
 		});
-
+		
 		//precise computing
 		const int blockSize = triSz;	//precise elemets buffer size
 		if (blockSize == 0) return res;
 		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->Point {
-			return intHexTr(p0, h) * -h.dens;
+			return intHexTr(p0, h);
 		};
 		const auto& triClac = [&](const auto &execPol) {
 			return thrust::transform_reduce(execPol, qsCUDAprec.begin(), qsCUDAprec.begin() + blockSize, triKr, Point(), thrust::plus<Point>());
 		};
 		res += blockSize > 100 ? triClac(thrust::device) : triClac(thrust::host);
-
+		
 		return res;
 	}
 
 private:
 	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
-	thrust::device_vector<PointValue> mpsCUDA;				//ro
+	thrust::device_vector<PointValue<Point>> mpsCUDA;				//ro
 	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;

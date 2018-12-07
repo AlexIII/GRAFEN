@@ -26,8 +26,8 @@ using std::string;
 using std::vector;
 using GeographicLib::TransverseMercator;
 
-#define G_CONST -6.67408
-#define MB (1024*1024)		//bytes in megabyte
+#define G_CONST  1	//-6.67408
+#define MB (1024*1024)
 
 #define MIN_DENS 1e-8
 
@@ -73,7 +73,7 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 //split dencity model to Hexahedrons
 template <class VAlloc>
 void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, limits Hlim,
-	const vector<vector<double>> &dens, vector<HexahedronWid, VAlloc> &hsi) {
+	const vector<vector<Point>> &dens, vector<HexahedronWid, VAlloc> &hsi) {
 
 	Nlim = { Nlim.lower - Nlim.dWh() / 2.,  Nlim.upper + Nlim.dWh() / 2., Nlim.n };
 	Elim = { Elim.lower - Elim.dWh() / 2.,  Elim.upper + Elim.dWh() / 2., Elim.n };
@@ -138,23 +138,21 @@ void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D<>::Element> psGK,
 }
 */
 
-//calculate gravity field operator on a single node
 void calcFieldNode(const Ellipsoid &e, const double l0, std::unique_ptr<gFieldSolver> &solver,
-	const vector<Dat3D<>::Point> &fp, vector<PointValue> &result) {
+	const vector<Dat3D<>::Point> &fp, vector<Point> &result) {
 	Assert(fp.size() == result.size());
 	const TransverseMercator proj(e.Req*1000., e.f, 1);
 
-	auto Kr = [&](const Dat3D<>::Point &p, PointValue& res) {
+	auto Kr = [&](const Dat3D<>::Point &p, Point& res) {
 		double l, B;
-
 		double x = xFromGK(p.x, l0);
 		proj.Reverse(toDeg(l0), x*1000., p.y*1000., B, l);
 		l = toRad(l);
 		B = toRad(B);
 		const Point p0 = e.getPoint(B, l, p.z);
-		const Point n0 = e.getNormal(B, l);
+		//const Point n0 = e.getNormal(B, l);
 		res += solver->solve(p0) * G_CONST;
-		res.val += (const Point&)res ^ n0;
+		//res.val += (const Point&)res ^ n0;
 	};
 	for (size_t i = 0; i < fp.size(); ++i)
 		Kr(fp[i], result[i]);
@@ -208,7 +206,7 @@ public:
 		return sz / (sz / partSize + 1);
 	}
 
-	void calcField(Ellipsoid e, double l0, gElementsShared &qs, Dat3D<PointValue> &dat, double dotPotentialRad) {
+	void calcField(Ellipsoid e, double l0, gElementsShared &qs, Dat3D<Point> &dat, double dotPotentialRad) {
 		//cout << "Dot potential replace radius: " << dotPotentialRad << endl;
 		if (isRoot())
 			cout << "Computing nodes: " << gridSize - 1 << endl;
@@ -250,11 +248,11 @@ public:
 	}
 */
 private:
-	void calcWithPool(Ellipsoid e, double l0, const Qiter &qbegin, const Qiter &qend, Dat3D<PointValue> &dat, double dotPotentialRad) {
+	void calcWithPool(Ellipsoid e, double l0, const Qiter &qbegin, const Qiter &qend, Dat3D<Point> &dat, double dotPotentialRad) {
 		vector<Dat3D<>::Point> fp = dat.getPoints();
-		vector<PointValue> result;
+		vector<Point> result;
 		//blocking process with rank 0 until the result's been gathered
-		MPIpool<Dat3D<>::Point, PointValue> pool(*this, fp, result, 1024);
+		MPIpool<Dat3D<>::Point, Point> pool(*this, fp, result, 1024);
 		int cnt = 0;
 		if (!isRoot()) {
 			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*qbegin, &*qend, dotPotentialRad, triBufferSize);
@@ -262,7 +260,7 @@ private:
 				vector<Dat3D<>::Point> task = pool.getTask();
 				if (!task.size()) break;
 				cout << "Task accepted " << ++cnt << " size: " << task.size()+1 << endl;
-				vector<PointValue> result(task.size());
+				vector<Point> result(task.size());
 				calcFieldNode(e, l0, solver, task, result);
 				pool.submit(result);
 			}
@@ -275,8 +273,10 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+	bool isRoot = true;
 	try {
 		ClusterSolver cs;
+		isRoot = cs.isRoot();
 		Ellipsoid Earth(R_EQ, R_PL);
 
 		//gElements qs;
@@ -336,8 +336,8 @@ int main(int argc, char *argv[]) {
 		}
 		if (cs.isRoot()) {
 			cout << "Clearing output file. Do NOT stop me!" << endl;
-			inp.dat.set(0);
-			if(!inp.grdFile) inp.dat.write(inp.dat2D);
+			inp.dat.set(Point(0));
+			inp.dat.write();
 			cout << "Clearing done. You may ctrl+c now." << endl;
 		}
 
@@ -351,14 +351,11 @@ int main(int argc, char *argv[]) {
 		const double time = tmr.stop();
 		if (cs.isRoot()) {
 			cout << "Computing finished: " << time << "sec." << endl << endl;
-			inp.dat.write(inp.dat2D);
-			/*
-			if (!inp.grdFile) inp.dat.write(inp.dat2D);
-			else GDconv::toGrd(inp.dat, inp.grdCols, inp.grdRows).Write(inp.grdFname);
-			*/
+			inp.dat.write();
 		}
-	} catch (std::exception &ex) {
-		cout << "Global exception: " << ex.what() << endl;
+	}
+	catch (exception &ex) {
+		if(isRoot) cerr << "Global exception: " << ex.what() << endl;
 		return 1;
 	}
 	cout << "Done" << endl;

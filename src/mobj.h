@@ -137,13 +137,13 @@ public:
 	friend std::ostream& operator<<(std::ostream& os, const Point& p);
 };
 
+template<typename VALTYPE>
 class PointValue : public Point {
 public:
-	double val;
+	VALTYPE val;
 	CUDA_HOST_DEV_FUN PointValue() : val(0) {}
-	CUDA_HOST_DEV_FUN PointValue(const double val) : val(val) {}
-	CUDA_HOST_DEV_FUN PointValue(const double x, const double y, const double z, const double val) : Point(x, y, z), val(val) {}
-	CUDA_HOST_DEV_FUN PointValue(const Point &p, const double val = 0) : Point(p), val(val) {}
+	CUDA_HOST_DEV_FUN PointValue(const double x, const double y, const double z, const VALTYPE val) : Point(x, y, z), val(val) {}
+	CUDA_HOST_DEV_FUN PointValue(const Point &p, const VALTYPE val = 0) : Point(p), val(val) {}
 	CUDA_HOST_DEV_FUN PointValue operator+(const PointValue& p) const {
 		return PointValue((const Point&)*this + (const Point&)p, val+p.val);
 	}
@@ -242,10 +242,10 @@ public:
 class Hexahedron {
 public:
 	Point p[8];
-	double dens;
+	Point dens;
 
 	CUDA_HOST_DEV_FUN Hexahedron() : dens(0) {}
-	Hexahedron(const std::vector<Point> &pin, const double dens = 0) : dens(dens) { set(pin); }
+	Hexahedron(const std::vector<Point> &pin, const Point dens = 0) : dens(dens) { set(pin); }
 	void set(const std::vector<Point> &pin) {
 		for (size_t i = 0; i < std::min(pin.size(), size_t(8)); ++i)
 			p[i] = pin[i];
@@ -318,8 +318,8 @@ public:
 		return r / mass;
 	}
 
-	PointValue getMassPoint() const {
-		return PointValue(massCenter(), volume()*dens);
+	PointValue<decltype(dens)> getMassPoint() const {
+		return PointValue<decltype(dens)>(massCenter(), dens*volume());
 	}
 
 private:
@@ -468,7 +468,16 @@ std::ostream& operator<<(std::ostream& os, const limits& l);
 std::ostream& operator<<(std::ostream& os, const Point& p);
 std::ostream& operator<<(std::ostream& os, const Triangle& q);
 std::ostream& operator<<(std::ostream& os, const Quadrangle& q);
-std::ostream& operator<<(std::ostream& os, const PointValue& p);
-std::istream& operator>>(std::istream& is, const PointValue& p);
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const PointValue<T>& p) {
+	os << p.val << " " << p.x << " " << p.y << " " << p.z;
+	return os;
+}
+template <typename T>
+std::istream& operator>>(std::istream& is, const PointValue<T>& p) {
+	is >> p.val >> p.x >> p.y >> p.z;
+	return is;
+}
+std::istream& operator>>(std::istream& is, const Point& p);
 
 #endif /* MOBJ_H_ */

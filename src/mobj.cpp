@@ -20,7 +20,7 @@ std::ostream& operator<<(std::ostream& os, const limits& l) {
 	return os;
 }
 std::ostream& operator<<(std::ostream& os, const Point& p) {
-	os << "{" << p.x << ", " << p.y << ", " << p.z << "}";
+	os << p.x << " " << p.y << " " << p.z;
 	return os;
 }
 std::ostream& operator<<(std::ostream& os, const Triangle& q) {
@@ -31,11 +31,8 @@ std::ostream& operator<<(std::ostream& os, const Quadrangle& q) {
 	os << q.p1 << ", " << q.p2 << ", " << q.p3 << ", " << q.p4;
 	return os;
 }
-std::ostream& operator<<(std::ostream& os, const PointValue& p) {
-	os << p.val << " " << p.x << " " << p.y << " " << p.z;
-	return os;
-}
-std::istream& operator>>(std::istream& is, const PointValue& p) {
-	is >> p.val >> p.x >> p.y >> p.z;
+
+std::istream& operator>>(std::istream& is, const Point& p) {
+	is >> p.x >> p.y >> p.z;
 	return is;
 }
