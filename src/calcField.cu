@@ -58,7 +58,27 @@ __host__ __device__ Point mMassPoint(const Point &r, const Point &m) {
 	const double d = r.eqNorm();
 	return r * 3 * (r^m) / (d*d*d*d*d) - m / (d*d*d);
 }
+/*
+__host__ __device__ Point lineField(const Point &p0, const MagLine &l) {
+	const Point d1 = l.p1 - p0, d2 = l.p2 - p0;
+	const double aNorm = (l.p2 - l.p1).eqNorm();
+	const Point D1 = d1 / d1.eqNorm(), D2 = d2 / d2.eqNorm();
+	const double q = 1. + (D1^D1);
+	const double d1Norm = d1.eqNorm(), d2Norm = d2.eqNorm();
+	const double mul = aNorm / (d1Norm*d2Norm*q), fs = 1 / d1Norm + 1 / d2Norm;
 
+	const auto &U = [=] __host__ __device__ (const double D1i, const double D1j, const double D2i, const double D2j, const double k) -> double{
+		return mul * (fs* (1/q * (D1i+D2i) * (D1j + D2j) - k) 
+			+ 1/d1Norm*D1i*D1j + 1 / d2Norm*D2i*D2j);
+	};
+
+	const double x = Point{ U(D1.x, D1.x, D2.x, D2.x, 1), U(D1.x, D1.y, D2.x, D2.y, 0), U(D1.x, D1.z, D2.x, D2.z, 0) } ^ l.val;
+	const double y = Point{ U(D1.y, D1.x, D2.y, D2.x, 0), U(D1.y, D1.y, D2.y, D2.y, 1), U(D1.y, D1.z, D2.y, D2.z, 0) } ^ l.val;
+	const double z = Point{ U(D1.z, D1.x, D2.z, D2.x, 0), U(D1.z, D1.y, D2.z, D2.y, 0), U(D1.z, D1.z, D2.z, D2.z, 1) } ^ l.val;
+
+	return Point{ x,y,z } *1 / (4.*M_PI);
+}
+*/
 bool cuSolver::isCUDAavailable() {
 	int deviceCount;
 	cudaError_t e = cudaGetDeviceCount(&deviceCount);
@@ -155,9 +175,9 @@ public:
 		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
 		qsCUDA.assign(qbegin, qend);
 		qsCUDAprec.resize(tirBufSz);
-		std::vector<PointValue<Point>> tmp(qend - qbegin);
-		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
-		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
+		std::vector<array<MagLine, 3>> tmp(qend - qbegin);
+		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getLines(); });
+		linesCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
 
 	~gFieldCUDAsolver() {
@@ -172,10 +192,10 @@ public:
 		int* const cnt = &triSz;	//precise elemets counter
 		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
-		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), Point(), thrust::plus<Point>(),
-			[=] __device__(const HexahedronWid& h, const PointValue<Point> &mp)->Point {
-			if ((mp - p0).eqNorm() > rad)
-				return mMassPoint(p0-mp, mp.val);
+		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), linesCUDA.begin(), Point(), thrust::plus<Point>(),
+			[=] __device__(const HexahedronWid& h, const array<MagLine, 3> &ml)->Point {
+			if ((ml._Elems[0].p1 - p0).eqNorm() > rad)
+				return ml._Elems[0].Hfield(p0) + ml._Elems[1].Hfield(p0) + ml._Elems[2].Hfield(p0);
 			hPres[atomicAdd(cnt, 1)] = h;
 			return Point();
 		});
@@ -196,7 +216,7 @@ public:
 
 private:
 	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
-	thrust::device_vector<PointValue<Point>> mpsCUDA;				//ro
+	thrust::device_vector<array<MagLine, 3>> linesCUDA;		//ro
 	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;

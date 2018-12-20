@@ -94,7 +94,6 @@ public:
 					e.p.z = Hf;
 			}
 		} else throw runtime_error("No *.dat file has been specified.");
-		double Hf = 0;
 
 		if (ip.exists("DPR"))
 			ip["DPR"] >> dotPotentialRad;
@@ -124,7 +123,8 @@ public:
 			auto z = Grid(fnames[i+2]).data;
 			vector<Point> t;
 			for (int i = 0; i < x.size(); ++i)
-				//t.push_back({ x[i], 0, 0 });
+				//t.push_back({ 0, 0, z[i] });
+				//t.push_back({ x[i], 2*y[i], 4*z[i] });
 				t.push_back({x[i], y[i], z[i]});
 			dens.push_back(t);
 		}

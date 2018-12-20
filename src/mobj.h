@@ -17,6 +17,7 @@
 #include <cmath>
 #include "Grid/Grid.h"
 #include <algorithm>
+#include <array>
 
 using std::abs;
 using std::sqrt;
@@ -106,7 +107,7 @@ public:
 		*this = *this + p;
 		return *this;
 	}
-	CUDA_HOST_DEV_FUN Point operator*(const Point& p) const { //vector mul
+	CUDA_HOST_DEV_FUN Point operator*(const Point& p) const { //vector mul, right basis
 		const double xt = y*p.z - z*p.y;
 		const double yt = z*p.x - x*p.z;
 		const double zt = x*p.y - y*p.x;
@@ -216,6 +217,9 @@ public:
 	Triangle getT2() const {
 		return { p1, p3, p4 };
 	}
+	Point center() const {
+		return p1 + (p3 - p1) / 2; //NOT REAL
+	}
 };
 
 class QuadrangleWid : public Quadrangle {
@@ -236,6 +240,41 @@ public:
 	}
 	Point massCenter() {
 		return (p + base.p1 + base.p2 + base.p3) / 4.;
+	}
+};
+
+class Basis {
+public:
+	Point i;
+	Point j;
+	Point k;
+	Basis(const Point i, const Point j, const Point k) : i(i.norm()), j(j.norm()), k(k.norm()) {}
+	Point toThisBasis(const Point &v) const {
+		const auto& mix = [](const Point& p1, const Point &p2, const Point &p3) -> double {
+			return p1 ^ (p2*p3);
+		};
+		const double D = mix(i, j, k);
+		const double D1 = mix(v, j, k);
+		const double D2 = mix(i, v, k);
+		const double D3 = mix(i, j, v);
+		return Point{D1/D, D2/D, D3/D};
+	}
+};
+
+class MagLine {
+public:
+	Point p1;
+	Point p2;
+	double mA; //magnetic-mass amplitude
+	CUDA_HOST_DEV_FUN Point Hfield(const Point& p) const {
+		const Point d1 = p1 - p, d2 = p2 - p;
+		const double aNorm = (p2 - p1).eqNorm();
+		const double d1s = d1^d1, d2s = d2^d2;
+		return (d2 / sqrt(d2s*d2s*d2s) - d1 / sqrt(d1s*d1s*d1s))
+			* (mA / aNorm);
+	}
+	Point a() const {
+		return p2 - p1;
 	}
 };
 
@@ -320,6 +359,23 @@ public:
 
 	PointValue<decltype(dens)> getMassPoint() const {
 		return PointValue<decltype(dens)>(massCenter(), dens*volume());
+	}
+
+	array<MagLine, 3> getLines() const {
+		array<int, 3> n{0, 1, 3};
+		array<MagLine, 3> res;
+		const std::vector<Quadrangle> qrs = splitQr();
+		for (int cnt = 0; cnt < 3; ++cnt) {
+			const int i = n[cnt];
+			res[cnt].p1 = qrs[i].center();
+			res[cnt].p2 = qrs[oppositeQr(i)].center();
+		}
+		Basis b{ res[0].a(), res[1].a(), res[2].a() };
+		const Point v = b.toThisBasis(dens*volume());
+		res[0].mA = v.x;
+		res[1].mA = v.y;
+		res[2].mA = v.z;
+		return res;
 	}
 
 private:
