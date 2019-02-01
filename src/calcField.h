@@ -32,7 +32,8 @@ public:
 class gFieldSolver : public cuSolver {
 public:
 	virtual Point solve(const Point &p0) = 0;
-	static std::unique_ptr<gFieldSolver> getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
+	static std::unique_ptr<gFieldSolver> getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend);
+	static std::unique_ptr<gFieldSolver> getCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
 		const double dotPotentialRad, const int tirBufSz);
 	virtual ~gFieldSolver() {}
 };

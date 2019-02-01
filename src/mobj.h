@@ -89,16 +89,45 @@ struct Field {
 	}
 };
 
+class Point2D {
+public:
+	double x;
+	double y;
+	CUDA_HOST_DEV_FUN Point2D operator-(const Point2D& p) const {
+		return { x - p.x, y - p.y};
+	}
+	CUDA_HOST_DEV_FUN Point2D operator+(const Point2D& p) const {
+		return { x + p.x, y + p.y};
+	}
+	CUDA_HOST_DEV_FUN double eqNorm() const {
+		return sqrt(x*x + y*y);
+	}
+	CUDA_HOST_DEV_FUN Point2D operator*(const double a) const {
+		return { x*a, y*a};
+	}
+	CUDA_HOST_DEV_FUN Point2D operator/(const double a) const {
+		return { x / a, y / a};
+	}
+};
+
 class Point {
 public:
 	double x;
 	double y;
 	double z;
+	
 	CUDA_HOST_DEV_FUN Point(const double x, const double y, const double z) : x(x), y(y), z(z) {}
 	CUDA_HOST_DEV_FUN Point(const double v) : Point(v, v, v) {}
 	CUDA_HOST_DEV_FUN Point() : Point(0) {}
+	CUDA_HOST_DEV_FUN Point(const Point2D &p, const double z = 0) : Point(p.x, p.y, z) {}
+	CUDA_HOST_DEV_FUN operator Point2D() const {
+		return { x, y };
+	}
 	CUDA_HOST_DEV_FUN Point operator-(const Point& p) const {
 		return {x-p.x, y-p.y, z-p.z};
+	}
+	CUDA_HOST_DEV_FUN Point2D operator-(const Point2D& p) const {
+		return { x - p.x, y - p.y};
 	}
 	CUDA_HOST_DEV_FUN Point operator+(const Point& p) const {
 		return {x+p.x, y+p.y, z+p.z};
@@ -203,7 +232,7 @@ public:
 	Point p4;
 	double val;
 	Quadrangle() : Quadrangle(Point(), Point(), Point(), Point()) {}
-	Quadrangle(const Point a, const Point b, const Point c, const Point d, const double val = 0)
+	Quadrangle(const Point &a, const Point &b, const Point &c, const Point &d, const double val = 0)
 		: p1(a), p2(b), p3(c), p4(d), val(val) {}
 	CUDA_HOST_DEV_FUN Point normal() const {
 		const Point vp = (p2-p1)*(p4-p1);
@@ -288,6 +317,8 @@ public:
 		for (size_t i = 0; i < std::min(pin.size(), size_t(8)); ++i)
 			p[i] = pin[i];
 	}
+	Hexahedron(const Quadrangle &qUpper, const Quadrangle &qLower, const Point dens = 0) :
+		Hexahedron({ qUpper.p1, qUpper.p2, qUpper.p3, qUpper.p4, qLower.p1, qLower.p2, qLower.p3, qLower.p4}, dens) {}
 
 	std::vector<Triangle> splitTr() const {
 		std::vector<Triangle> trs = {
@@ -398,7 +429,7 @@ public:
 #endif
 	CUDA_HOST_DEV_FUN HexahedronWid() {}
 	CUDA_HOST_DEV_FUN Triangle getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
-		switch(i) {
+		switch (i) {
 			case 0: return Triangle(p[2], p[3], p[1]);
 			case 1: return Triangle(p[2], p[1], p[0]);
 			case 2: return Triangle(p[0], p[4], p[6]);
@@ -411,6 +442,47 @@ public:
 			case 9: return Triangle(p[6], p[3], p[2]);
 			case 10: return Triangle(p[6], p[4], p[5]);
 			case 11: return Triangle(p[6], p[5], p[7]);
+			default: return Triangle();
+		}
+	}
+	CUDA_HOST_DEV_FUN Triangle getTriSafeZ(const int i) const { //Triangle normal() is always external WRT Hexahedron
+		switch(i) {
+			//upper plane
+			case 0:
+			case 1:
+				if (!isOnOneSide(p[2], p[1], p[0], p[3])) {
+					if(i == 0) return Triangle(p[2], p[3], p[1]);
+					else return Triangle(p[2], p[1], p[0]);
+				} else {
+					if (i == 0) return Triangle(p[3], p[1], p[0]);
+					else return Triangle(p[0], p[3], p[2]);
+				}
+			//case 0: return Triangle(p[2], p[3], p[1]);
+			//case 1: return Triangle(p[2], p[1], p[0]);
+
+			case 2: return Triangle(p[0], p[4], p[6]);
+			case 3: return Triangle(p[0], p[6], p[2]);
+			case 4: return Triangle(p[3], p[7], p[5]);
+			case 5: return Triangle(p[3], p[5], p[1]);
+			case 6: return Triangle(p[0], p[1], p[5]);
+			case 7: return Triangle(p[0], p[5], p[4]);
+			case 8: return Triangle(p[6], p[7], p[3]);
+			case 9: return Triangle(p[6], p[3], p[2]);
+
+			//lower plane
+			case 10:
+			case 11:
+				if (!isOnOneSide(p[6], p[5], p[4], p[7])) {
+					if (i == 0) return Triangle(p[6], p[7], p[5]);
+					else return Triangle(p[6], p[5], p[4]);
+				}
+				else {
+					if (i == 0) return Triangle(p[7], p[5], p[4]);
+					else return Triangle(p[4], p[7], p[6]);
+				}
+			//case 10: return Triangle(p[4], p[5], p[7]);
+			//case 11: return Triangle(p[4], p[7], p[6]);
+
 			default: return Triangle();
 		}
 	}
@@ -428,6 +500,12 @@ private:
 			triNormals[i] = getTri(i).normal();
 	}
 #endif
+	CUDA_HOST_DEV_FUN bool isOnOneSide(const Point2D& l1, const Point2D& l2, const Point2D& p1, const Point2D& p2) const {
+		return getSide(l1, l2, p1) == getSide(l1, l2, p2);
+	}
+	CUDA_HOST_DEV_FUN bool getSide(const Point2D& l1, const Point2D& l2, const Point2D& p) const {
+		return (p.x - l1.x) / (l2.x - l1.x) - (p.y - l1.y) / (l2.y - l1.y) > 0;
+	}
 };
 
 class Ellipsoid {
@@ -488,14 +566,17 @@ public:
 	}
 };
 
-class SubCube {
+class Volume {
+public: 
 	limits x;
 	limits y;
 	limits z;
-public:
+};
+
+class SubCube : public Volume {
 	Point p;
 	SubCube() {}
-	SubCube(const limits &x, const limits &y, const limits &z) : x(x), y(y), z(z) {}
+	SubCube(const limits &x, const limits &y, const limits &z) : Volume({x,y,z}) {}
 
 	template<typename OneVarFun>
 	CUDA_HOST_DEV_FUN

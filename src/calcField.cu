@@ -49,7 +49,7 @@ __host__ __device__ Point intTrAn(const Point &p0, const Triangle &t) {
 __host__ __device__ Point intHexTr(const Point &p0, const HexahedronWid &h) {
 	Point sum;
 	for (int i = 0; i < 12; ++i) {
-		const auto tri = h.getTri(i);
+		const auto tri = h.getTriSafeZ(i);
 		sum += intTrAn(p0, tri) * (tri.normal() ^ h.dens);
 	}
 	return sum;
@@ -171,21 +171,47 @@ std::unique_ptr<gFieldInvSolver> gFieldInvSolver::getCUDAtransSolver(const std::
 
 class gFieldCUDAsolver : public gFieldSolver {
 public:
-
-	gFieldCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
-		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
+	using dvHex = thrust::device_vector<HexahedronWid>;
+	gFieldCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend) {
 		qsCUDA.assign(qbegin, qend);
+	}
+	virtual ~gFieldCUDAsolver() {}
+	virtual Point solve(const Point &p0) override {
+		return solve(qsCUDA.cbegin(), qsCUDA.cend(), p0);
+	}
+
+	static Point solve(const dvHex::const_iterator &qbegin, const dvHex::const_iterator &qend, const Point &p0) {
+		Point res;
+		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->Point {
+			return intHexTr(p0, h);
+		};
+		const auto& triClac = [&](const auto &execPol) {
+			return thrust::transform_reduce(execPol, qbegin, qend, triKr, Point(), thrust::plus<Point>());
+		};
+		res += (qend - qbegin) > 100 ? triClac(thrust::device) : triClac(thrust::host);
+
+		return res;
+	}
+protected:
+	dvHex qsCUDA;			//ro
+};
+
+class gFieldCUDAreplacingSolver : public gFieldCUDAsolver {
+public:
+
+	gFieldCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend, const double dotPotentialRad, 
+			const int tirBufSz) : gFieldCUDAsolver(qbegin, qend), dotPotentialRad(dotPotentialRad) {
 		qsCUDAprec.resize(tirBufSz);
 		std::vector<std::array<MagLine, 3>> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getLines(); });
 		linesCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
 
-	~gFieldCUDAsolver() {
+	virtual ~gFieldCUDAreplacingSolver() {
 		cudaDeviceSynchronize();
 	}
 
-	Point solve(const Point &p0) override {
+	virtual Point solve(const Point &p0) override {
 		Point res;
 
 		//rough computing
@@ -204,28 +230,24 @@ public:
 		//precise computing
 		const int blockSize = triSz;	//precise elemets buffer size
 		if (blockSize == 0) return res;
-		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->Point {
-			return intHexTr(p0, h);
-		};
-		const auto& triClac = [&](const auto &execPol) {
-			return thrust::transform_reduce(execPol, qsCUDAprec.begin(), qsCUDAprec.begin() + blockSize, triKr, Point(), thrust::plus<Point>());
-		};
-		res += blockSize > 100 ? triClac(thrust::device) : triClac(thrust::host);
-		
+		res += gFieldCUDAsolver::solve(qsCUDAprec.cbegin(), qsCUDAprec.cbegin() + blockSize, p0);
+
 		return res;
 	}
 
 private:
-	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
 	thrust::device_vector<std::array<MagLine, 3>> linesCUDA;		//ro
-	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
+	dvHex qsCUDAprec;										//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;
 };
 
-std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
+std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
 	const double dotPotentialRad, const int tirBufSz) {
-	return std::unique_ptr<gFieldSolver>(new gFieldCUDAsolver(qbegin, qend, dotPotentialRad, tirBufSz));
+	return std::unique_ptr<gFieldSolver>(new gFieldCUDAreplacingSolver(qbegin, qend, dotPotentialRad, tirBufSz));
+}
+std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend) {
+	return std::unique_ptr<gFieldSolver>(new gFieldCUDAsolver(qbegin, qend));
 }
 
 static void CheckCudaErrorAux(const char *file, unsigned line, const char *statement, cudaError_t err)

@@ -108,18 +108,13 @@ public:
 		return std::min_element(es.begin() ,es.end() , [](const Element &e1, const Element &e2)->bool{return e1.p.y < e2.p.y;})->p.y;
 	}
 
-	Dat(const size_t sz = 0) : es(sz) {
-		fileName = "def.dat";
-	}
+	Dat(const size_t sz = 0) : es(sz) {}
 
 	Dat(const std::string fname) {
-		fileName = "def.dat";
 		read(fname);
 	}
 
-	Dat(typename std::vector<Element>::iterator &from, typename std::vector<Element>::iterator &to) : es(from,to) {
-		fileName = "def.dat";
-	}
+	Dat(typename std::vector<Element>::iterator &from, typename std::vector<Element>::iterator &to) : es(from,to) {}
 
 	typename std::vector<Element>::iterator begin() {
 		return es.begin();
@@ -131,7 +126,7 @@ public:
 
 	void read(const std::string fname) {
 		fileName = fname;
-
+		if(fileName.empty()) throw std::runtime_error("Dat file name wasn't specified.");
 		std::ifstream file(fileName);
 		if(!file.is_open()) throw std::runtime_error("Can't open *.dat file: "+fname);
 		Element el;
@@ -154,6 +149,7 @@ public:
 	}
 	void write(const std::string fname, const bool as2D = false) {
 		fileName = fname;
+		if (fileName.empty()) throw std::runtime_error("Dat file name wasn't specified.");
 		std::ofstream outDatFile(fileName);
 		outDatFile << std::setprecision(12);
 		if(!as2D) for(size_t i = 0; i < es.size(); ++i)
