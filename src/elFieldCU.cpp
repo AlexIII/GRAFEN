@@ -127,7 +127,7 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 	for (int yi = 0; yi < yLim.n; ++yi)
 		for (int xi = 0; xi < xLim.n; ++xi)
 			qrs.push_back({ mesh[(yi + 1)*(xLim.n+1) + xi + 1], mesh[(yi + 1)*(xLim.n+1) + xi], mesh[yi*(xLim.n+1) + xi + 1], mesh[yi*(xLim.n+1) + xi], Joutter, Koutter });
-	
+	/*
 	//make lateral circle in mesh
 	for (QuadrangleRef& q : qrs) {
 		if (q.isIn(well)) {
@@ -144,7 +144,8 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 			if (well.isIn(q.p4)) q.p4 = well.toBorder(q.p4);
 		}
 	}
-	
+	*/
+
 	//make hexahedrons
 	hsi.resize(xLim.n*yLim.n*v.z.n);
 	K.resize(xLim.n*yLim.n*v.z.n);
@@ -242,17 +243,6 @@ void wellTest(int argc, char *argv[]) {
 	cout << "bln ok." << endl;
 	*/
 
-	//TO DO:
-	/*
-	1. input file for I - I.dat
-	2. output file - wellField.dat
-	3. apply Kinner, Kouter
-	4. generate I
-	5. input H
-	5.1 if H is number then solve internal with Kinner, Kouter
-	5.1 if no H then solve on the surface with Kinner = Kouter = 1/M_PI_4
-	*/
-
 	cout << "Solving..." << endl;
 	const double H = 0.25;
 	Dat2D<Point> dat;
@@ -271,121 +261,157 @@ void wellTest(int argc, char *argv[]) {
 	cout << "Done." << endl;
 }
 
-void wellTestDemag(int argc, char *argv[]) {
-	//InputParser inp(argc, argv);
+class WellDemagCluster : public MPI {
+public:
+	const int maxGPUmemMB = 5000;
+	int triBufferSize = 0;
+	using Qiter = gElementsShared::const_iterator;
 
-	const string oFname = "wellField.dat";
-	const VolumeMod v = Volume{ { 0, 4, 80 },{ 0, 4, 80 },{ -10, 0, 1 } };
-	const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-	const double Kouter = 0.02;
-	const double Kinner = 0;
-	const Point Hprime = {14, 14, 35}; //~40A/m
-	const double H = 0.25;
-	
+	SharedMemBase<gElementsShared> *sharedMem = 0;
 
-	cout << "Generating model..." << endl;
-	const Point J0outer = Hprime*Kouter;
-	const Point J0inner = Hprime*Kinner;
-	vector<HexahedronWid> hsi;
-	vector<double> K;
-	wellGen(v, well, J0outer, Kouter, J0inner, Kinner, hsi, K);
-	vector<Point> J0(hsi.size());
-	transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
-
-	const auto &fOn = [&hsi, &v, &H, &K](const string fname) {
-		Dat2D<Point> dat;
-		unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
-		for (int i = 0; i < v.y.n; ++i) {
-			for (int j = 0; j < v.x.n; ++j) {
-				const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
-				const Point res = solver->solve(p0) / M_PI_4;
-				dat.es.push_back({ { p0.x, p0.y }, res });
-			}
-			cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
-		}
-		cout << endl;
-		dat.write(fname);
-	};
-	const auto &fJn = [&hsi, &K, &J0](vector<Point> &res) {
-		unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
-		for (int i = 0; i < hsi.size(); ++i) {
-			const Point p0 = hsi[i].massCenter();
-			res[i] = solver->solve(p0) * K[i] + J0[i];
-			cout << "\r" << (100 * (i + 1)) / res.size() << "%";
-		}
-	};
-	const auto& residualAndCopy = [](vector<Point> &res, vector<HexahedronWid> &hsi) {
-		double sum = 0;
-		for (int i = 0; i < res.size(); ++i) {
-			const Point v = res[i] - hsi[i].dens;
-			sum += v^v;
-			hsi[i].dens = res[i];
-		}
-		return sqrt(sum);
-	};
-
-	const auto &expJ = [&hsi, &v](const string fname) {	//dump J of upper layer
-		Dat2D<Point> dat;
-		for (int i = 0; i < v.y.n; ++i) {
-			for (int j = 0; j < v.x.n; ++j) {
-				const auto& h = hsi[i * v.x.n + j];
-				const Point p0 = h.massCenter();
-				dat.es.push_back({ { p0.x, p0.y }, h.dens });
-			}
-			cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
-		}
-		cout << endl;
-		dat.write(fname);
-	};
-
-	//expJ("J0.dat");
-	cout << "Solving..." << endl;
-	
-	const double eps = 1e-5;
-	const int maxIter = 20;
-	double err = 1;
-	vector<Point> In(hsi.size());
-	char c = '1';
-	for (int it = 0; it < maxIter && err > eps; ++it) {
-		cout << "Iter: " << it << endl;
-		fJn(In);
-		cout << endl;
-
-		Dat2D<Point> dat;
-		for (int i = 0; i < v.y.n; ++i) {
-			for (int j = 0; j < v.x.n; ++j) {
-				const int ind = i*v.x.n + j;
-				const Point p0 = hsi[ind].massCenter();
-				dat.es.push_back({ { p0.x, p0.y }, In[ind] - hsi[ind].dens });
-			}
-		}
-		dat.write(string("it_")+c+"_I_corr.dat");
-		++c;
-
-		err = residualAndCopy(In, hsi);
-		cout << "Err: " << err << endl;
+	WellDemagCluster() : MPI() {
+		if (gridSize < 2) throw runtime_error("You must run at least 2 MPI processes.");
+		if (root != 0) throw runtime_error("Root process must have rank = 0.");
+		const auto lid = localId();
+		const int devId = !isRoot() && get<1>(lid) ? get<0>(lid) - 1 : get<0>(lid);
+		cuSolver::setDevice(devId);
 	}
-	//expJ("Jn.dat");
-	
-	fOn("wellField.dat"s);
+
+	void run(int argc, char *argv[]) {
+		//InputParser inp(argc, argv);
+
+		const string oFname = "wellField.dat";
+		const VolumeMod v = Volume{ { 0, 40, 40 },{ 0, 40, 40 },{ -4, 0, 5 } };
+		const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
+		const double Kouter = 0.02;
+		const double Kinner = 0;
+		const Point Hprime = { 14, 14, 35 }; //~40A/m
+		const double H = 0.25;
 
 
-	/*
-	Dat2D<Point> dat;
-	unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
-	for (int i = 0; i < v.y.n; ++i) {
-		for (int j = 0; j < v.x.n; ++j) {
-			const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
-			const Point res = solver->solve(p0);
-			dat.es.push_back({ { p0.x, p0.y }, res });
+		cout << "Generating model..." << endl;
+		const Point J0outer = Hprime*Kouter;
+		const Point J0inner = Hprime*Kinner;
+		vector<HexahedronWid> hsi;
+		vector<double> K;
+		wellGen(v, well, J0outer, Kouter, J0inner, Kinner, hsi, K);
+		vector<Point> J0(hsi.size());
+		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
+
+		const auto &fOn = [&hsi, &v, &H, &K](const string fname) {
+			Dat2D<Point> dat;
+			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			for (int i = 0; i < v.y.n; ++i) {
+				for (int j = 0; j < v.x.n; ++j) {
+					const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
+					const Point res = solver->solve(p0) / (4*M_PI);
+					dat.es.push_back({ { p0.x, p0.y }, res });
+				}
+				cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
+			}
+			cout << endl;
+			dat.write(fname);
+		};
+		const auto &fJn = [&hsi, &K, &J0, this](vector<Point> &res) {
+			Bcast(hsi);
+			
+			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			vector<Point> fieldPoints(hsi.size());
+			std::transform(hsi.cbegin(), hsi.cend(), fieldPoints.begin(), [](const HexahedronWid &h) {return h.massCenter();});
+			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
+			int cnt = 0;
+			if (!isRoot()) {
+				while (1) {
+					const vector<Point> task = pool.getTask();
+					if (!task.size()) break;
+					cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
+					vector<Point> result(task.size());
+					for (int i = 0; i < task.size(); ++i)
+						result[i] = solver->solve(task[i]);
+					pool.submit(result);
+				}
+			}
+			else {
+				cout << "result gather ok" << endl;
+				for (int i = 0; i < res.size(); ++i)
+					res[i] = (res[i] - hsi[i].dens * (4.*M_PI / 3.)) * K[i] + J0[i];
+			}
+			
+			/*
+			for (int i = 0; i < hsi.size(); ++i) {
+				const Point p0 = hsi[i].massCenter();
+				res[i] = solver->solve(p0) * K[i] + J0[i];
+				if (!i || !((100 * (i + 1)) % res.size()) || i == res.size() - 1)
+					cout << "\r" << (100 * (i + 1)) / res.size() << "%";
+			}
+			*/
+		};
+		const auto& residualAndCopy = [](vector<Point> &res, vector<HexahedronWid> &hsi) {
+			double sum = 0;
+			for (int i = 0; i < res.size(); ++i) {
+				const Point v = res[i] - hsi[i].dens;
+				sum += v^v;
+				hsi[i].dens = res[i];
+			}
+			return sqrt(sum);
+		};
+
+		const auto &expJ = [&hsi, &v](const string fname) {	//dump J of upper layer
+			Dat2D<Point> dat;
+			for (int i = 0; i < v.y.n; ++i) {
+				for (int j = 0; j < v.x.n; ++j) {
+					const auto& h = hsi[i * v.x.n + j];
+					const Point p0 = h.massCenter();
+					dat.es.push_back({ { p0.x, p0.y }, h.dens });
+				}
+				cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
+			}
+			cout << endl;
+			dat.write(fname);
+		};
+
+		
+		cout << "Solving..." << endl;
+
+		if (!isRoot()) {
+			while (1) {
+				bool cont = false;
+				Bcast(cont);
+				if (!cont) break;
+				fJn(vector<Point>());
+			}
+			cout << "Done." << endl;
+			return;
 		}
-		cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
+
+		//expJ("J0.dat");
+		
+		const double eps = 1e-3;
+		const int maxIter = 0;
+		double err = 1;
+		char c = '1';
+		for (int it = 0; it < maxIter && err > eps; ++it) {
+			cout << "Iter: " << it << endl;
+			bool cont = true;
+			Bcast(cont);
+			vector<Point> In(hsi.size());
+			fJn(In);
+			cout << endl;
+			err = residualAndCopy(In, hsi);
+			cout << "Err: " << err << endl;
+			//fOn("wellField.dat"s);
+		}
+		bool cont = false;
+		Bcast(cont);
+
+		//expJ("Jn.dat");
+		fOn("wellField.dat"s);
+
+		cout << "Done." << endl;
 	}
-	cout << endl;
-	dat.write("wellField.dat"s);
-	*/
-	cout << "Done." << endl;
-}
+};
+
+
 
 //split dencity model to Hexahedrons
 template <class VAlloc>
@@ -592,7 +618,7 @@ private:
 int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
-		wellTestDemag(argc, argv);
+		WellDemagCluster().run(argc, argv);
 		return 0;
 
 		ClusterSolver cs;
