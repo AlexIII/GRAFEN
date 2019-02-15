@@ -218,39 +218,29 @@ public:
 
 void wellTest(int argc, char *argv[]) {
 	const string oFname = "wellField.dat";
-	const VolumeMod v = Volume { { 0, 4, 150 },{ 0, 4, 150 },{ -100, 0, 1 } };
+	const VolumeMod v = Volume{ { 0, 40, 40 },{ 0, 40, 40 },{ -4, 0, 1 } };
 	const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-
-	InputParser inp(argc, argv);
-	if (inp.exists("gen")) {
-		cout << "Empty output generation..." << endl;
-		v.save(oFname);
-		cout << "Done." << endl;
-	}
+	const double Kouter = 0.02;
+	const double Kinner = 0;
+	const Point Hprime = { 14, 14, 35 }; //~40A/m
+	const double H = 0.25;
 
 	cout << "Generating model..." << endl;
+	const Point J0outer = Hprime*Kouter;
+	const Point J0inner = Hprime*Kinner;
 	vector<HexahedronWid> hsi;
 	vector<double> K;
-	wellGen(v, well, { 1, 0, 0 }, 1, 0, 0, hsi, K);
-
-	//debug files
-	/*
-	cout << "Gen ok." << endl;
-	makeCloud(hsi, "wellCloud.dat");
-	cout << "dat ok." << endl;
-	makeBln(hsi, "out_wellFrame.bln", false);
-	makeBln(hsi, "in_wellFrame.bln", true);
-	cout << "bln ok." << endl;
-	*/
+	wellGen(v, well, J0outer, Kouter, J0inner, Kinner, hsi, K);
+	vector<Point> J0(hsi.size());
+	transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
 	cout << "Solving..." << endl;
-	const double H = 0.25;
 	Dat2D<Point> dat;
 	unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
 	for (int i = 0; i < v.y.n; ++i) {
 		for (int j = 0; j < v.x.n; ++j) {
 			const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
-			const Point res = solver->solve(p0);
+			const Point res = solver->solve(p0) / (4 * M_PI);
 			dat.es.push_back({ { p0.x, p0.y }, res });
 		}
 		cout << "\r" << (100*(i + 1))/ v.y.n << "%";
@@ -281,7 +271,7 @@ public:
 		//InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		const VolumeMod v = Volume{ { 0, 40, 40 },{ 0, 40, 40 },{ -4, 0, 5 } };
+		const VolumeMod v = Volume{ { 0, 40, 40 },{ 0, 40, 40 },{ -4, 0, 1 } };
 		const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 		const double Kouter = 0.02;
 		const double Kinner = 0;
@@ -619,6 +609,7 @@ int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
 		WellDemagCluster().run(argc, argv);
+		//wellTest(argc, argv);
 		return 0;
 
 		ClusterSolver cs;
