@@ -222,7 +222,7 @@ void hexTest(int argc, char *argv[]) {
 	Hexahedron h({
 		{ 20, 20, 0 },{ -20, 20, 0 },{ 20, -20, 0 },{ -20, -20, 0 },
 		{ 20, 20, -4 },{ -20, 20, -4 },{ 20, -20, -4 },{ -20, -20, -4 }
-	}, Point{ 14, 14, 35 }*0.25);
+	}, Point{ 14, 14, 35 }*0.2);
 	auto hw = HexahedronWid(h);
 	double H = 0.25;
 
@@ -238,7 +238,7 @@ void hexTest(int argc, char *argv[]) {
 		}
 	}
 
-	dat.write("cubeField.dat"s);
+	dat.write("cubeFieldSZ.dat"s);
 	cout << "Done." << endl;
 }
 
