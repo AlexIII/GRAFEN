@@ -320,24 +320,6 @@ public:
 	Hexahedron(const Quadrangle &qUpper, const Quadrangle &qLower, const Point dens = 0) :
 		Hexahedron({ qUpper.p1, qUpper.p2, qUpper.p3, qUpper.p4, qLower.p1, qLower.p2, qLower.p3, qLower.p4}, dens) {}
 
-	std::vector<Triangle> splitTr() const {
-		std::vector<Triangle> trs = {
-			Triangle(p[0], p[2], p[3]), //0
-			Triangle(p[0], p[1], p[3]), //1
-			Triangle(p[0], p[2], p[4]), //2
-			Triangle(p[2], p[4], p[6]), //3
-			Triangle(p[1], p[3], p[5]), //4
-			Triangle(p[3], p[5], p[7]), //5
-			Triangle(p[4], p[6], p[7]), //6
-			Triangle(p[4], p[5], p[7]), //7
-			Triangle(p[0], p[4], p[5]), //8
-			Triangle(p[0], p[1], p[5]), //9
-			Triangle(p[2], p[6], p[7]), //10
-			Triangle(p[2], p[3], p[7]) //11
-		};
-		return trs;
-	}
-
 	std::vector<Quadrangle> splitQr() const {
 		std::vector<Quadrangle> qrs = {
 			Quadrangle(p[2], p[3], p[1], p[0]),
@@ -428,7 +410,7 @@ public:
 	HexahedronWid(const Hexahedron &h) : Hexahedron(h) {}
 #endif
 	CUDA_HOST_DEV_FUN HexahedronWid() {}
-	
+	/*
 	CUDA_HOST_DEV_FUN Triangle getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
 		switch (i) {
 			case 0: return Triangle(p[2], p[3], p[1]);
@@ -446,7 +428,7 @@ public:
 			default: return Triangle();
 		}
 	}
-	/*
+	*/
 	CUDA_HOST_DEV_FUN Triangle getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
 		switch(i) {
 			//upper plane
@@ -457,9 +439,9 @@ public:
 					else return Triangle(p[2], p[1], p[0]);
 				} else {
 					if (i == 0) return Triangle(p[3], p[1], p[0]);
-					else return Triangle(p[0], p[3], p[2]);
+					else return Triangle(p[3], p[0], p[2]);
 				}
-		
+
 			//case 0: return Triangle(p[2], p[3], p[1]);
 			//case 1: return Triangle(p[2], p[1], p[0]);
 			case 2: return Triangle(p[0], p[4], p[6]);
@@ -470,25 +452,25 @@ public:
 			case 7: return Triangle(p[0], p[5], p[4]);
 			case 8: return Triangle(p[6], p[7], p[3]);
 			case 9: return Triangle(p[6], p[3], p[2]);
-			//case 10: return Triangle(p[4], p[5], p[7]);
-			//case 11: return Triangle(p[4], p[7], p[6]);
+			//case 10: return Triangle(p[6], p[4], p[5]);
+			//case 11: return Triangle(p[6], p[5], p[7]);
 
 			//lower plane
 			case 10:
 			case 11:
 				if (!isOnOneSide(p[6], p[5], p[4], p[7])) {
-					if (i == 10) return Triangle(p[6], p[7], p[5]);
-					else return Triangle(p[6], p[5], p[4]);
+					if (i == 10) return Triangle(p[6], p[4], p[5]);
+					else return Triangle(p[6], p[5], p[7]);
 				}
 				else {
-					if (i == 10) return Triangle(p[7], p[5], p[4]);
+					if (i == 10) return Triangle(p[4], p[5], p[7]);
 					else return Triangle(p[4], p[7], p[6]);
 				}
 
 			default: return Triangle();
 		}
 	}
-	*/
+	
 	CUDA_HOST_DEV_FUN Point getTriNorm(const int i) const {
 #ifndef CALC_NORMALS_ON_DEMAND
 		return triNormals[i];
