@@ -127,7 +127,7 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 	for (int yi = 0; yi < yLim.n; ++yi)
 		for (int xi = 0; xi < xLim.n; ++xi)
 			qrs.push_back({ mesh[(yi + 1)*(xLim.n+1) + xi + 1], mesh[(yi + 1)*(xLim.n+1) + xi], mesh[yi*(xLim.n+1) + xi + 1], mesh[yi*(xLim.n+1) + xi], Joutter, Koutter });
-	/*
+	
 	//make lateral circle in mesh
 	for (QuadrangleRef& q : qrs) {
 		if (q.isIn(well)) {
@@ -144,7 +144,6 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 			if (well.isIn(q.p4)) q.p4 = well.toBorder(q.p4);
 		}
 	}
-	*/
 
 	//make hexahedrons
 	hsi.resize(xLim.n*yLim.n*v.z.n);
@@ -244,7 +243,7 @@ void hexTest(int argc, char *argv[]) {
 
 void wellTest(int argc, char *argv[]) {
 	const string oFname = "wellField.dat";
-	const VolumeMod v = Volume{ { 0, 40, 40 },{ 0, 40, 40 },{ -4, 0, 1 } };
+	const VolumeMod v = Volume{ { 0, 4, 40 },{ 0, 4, 40 },{ -4, 0, 40 } };
 	const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 	const double Kouter = 0.02;
 	const double Kinner = 0;
@@ -297,14 +296,13 @@ public:
 		//InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		const VolumeMod v = Volume{ { 0, 40, 40 },{ 0, 40, 40 },{ -4, 0, 1 } };
-		const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
+		const VolumeMod v = Volume{ { 0, 8, 120 },{ 0, 8, 120 },{ -8, 0, 80 } };
+		const Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 		const double Kouter = 0.02;
 		const double Kinner = 0;
 		const Point Hprime = { 14, 14, 35 }; //~40A/m
 		const double H = 0.25;
-
-
+		
 		cout << "Generating model..." << endl;
 		const Point J0outer = Hprime*Kouter;
 		const Point J0inner = Hprime*Kinner;
@@ -403,9 +401,8 @@ public:
 		//expJ("J0.dat");
 		
 		const double eps = 1e-3;
-		const int maxIter = 0;
+		const int maxIter = 10;
 		double err = 1;
-		char c = '1';
 		for (int it = 0; it < maxIter && err > eps; ++it) {
 			cout << "Iter: " << it << endl;
 			bool cont = true;
@@ -423,7 +420,7 @@ public:
 		//expJ("Jn.dat");
 		fOn("wellField.dat"s);
 
-		cout << "Done." << endl;
+		cout << "Master Done." << endl;
 	}
 };
 
@@ -634,8 +631,8 @@ private:
 int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
-		//WellDemagCluster().run(argc, argv);
-		hexTest(argc, argv);
+		WellDemagCluster().run(argc, argv);
+		//wellTest(argc, argv);
 		return 0;
 
 		ClusterSolver cs;
