@@ -296,7 +296,7 @@ public:
 		//InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		const VolumeMod v = Volume{ { 0, 8, 120 },{ 0, 8, 120 },{ -8, 0, 80 } };
+		const VolumeMod v = Volume{ { 0, 8, 120 },{ 0, 8, 120 },{ -8, 0, 20 } };
 		const Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 		const double Kouter = 0.02;
 		const double Kinner = 0;
@@ -315,13 +315,18 @@ public:
 		const auto &fOn = [&hsi, &v, &H, &K](const string fname) {
 			Dat2D<Point> dat;
 			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			int pp = -1;
 			for (int i = 0; i < v.y.n; ++i) {
 				for (int j = 0; j < v.x.n; ++j) {
 					const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
 					const Point res = solver->solve(p0) / (4*M_PI);
 					dat.es.push_back({ { p0.x, p0.y }, res });
 				}
-				cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
+				const int p = (100 * (i + 1)) / v.y.n;
+				if (p != pp) {
+					pp = p;
+					cout << p << "%" << endl;
+				}
 			}
 			cout << endl;
 			dat.write(fname);
@@ -360,7 +365,7 @@ public:
 			}
 			*/
 		};
-		const auto& residualAndCopy = [](vector<Point> &res, vector<HexahedronWid> &hsi) {
+		const auto& residualAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
 			double sum = 0;
 			for (int i = 0; i < res.size(); ++i) {
 				const Point v = res[i] - hsi[i].dens;
@@ -399,8 +404,9 @@ public:
 		}
 
 		//expJ("J0.dat");
+		fOn("wellField0.dat"s);
 		
-		const double eps = 1e-3;
+		const double eps = 1e-4;
 		const int maxIter = 10;
 		double err = 1;
 		for (int it = 0; it < maxIter && err > eps; ++it) {
@@ -410,7 +416,12 @@ public:
 			vector<Point> In(hsi.size());
 			fJn(In);
 			cout << endl;
-			err = residualAndCopy(In, hsi);
+			err = residualAndCopy(In, hsi) / [&In]() {
+				double sum = 0;
+				for (auto& i: In)
+					sum += i ^ i;
+				return sqrt(sum);
+			}();
 			cout << "Err: " << err << endl;
 			//fOn("wellField.dat"s);
 		}
