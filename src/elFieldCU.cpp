@@ -155,13 +155,50 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 			for (int xi = 0; xi < xLim.n; ++xi) {
 				const QuadrangleRef& cur = qrs[yi*xLim.n + xi];
 				const int ind = (zi*yLim.n + yi)*xLim.n + xi;
-				hsi[ind] = Hexahedron(
-					cur + Point{0, 0, v.z.at(zi)}, 
-					cur + Point{0, 0, v.z.at(zi+1)},
-					cur.J);
+				hsi[ind] = Hexahedron{
+					cur + Point{0, 0, v.z.at(zi)},
+					cur + Point{0, 0, v.z.at(zi + 1)},
+					cur.J};
 				K[ind] = cur.k;
 			}
+
+	auto makeOuterHex = [&Joutter](const Point& llt, const Point& rub) { //left low top, right upper bottom
+		return Hexahedron{ {
+			{rub.x, rub.y, llt.z},
+			{ rub.x, llt.y, llt.z },
+			{ llt.x, rub.y, llt.z },
+			llt,
+			rub,
+			{ rub.x, llt.y, rub.z },
+			{ llt.x, rub.y, rub.z },
+			{llt.x, llt.y, rub.z}
+			}, Joutter };
+	};
 	
+	//add 4 external quadrangles
+	const double l = 1e8;
+	hsi.push_back(makeOuterHex({v.x.lower, - l, v.z.upper}, { l, v.y.lower, v.z.lower }));
+	hsi.push_back(makeOuterHex({ v.x.upper, v.y.lower, v.z.upper }, { l, l, v.z.lower }));
+	hsi.push_back(makeOuterHex({- l, v.y.upper, v.z.upper }, { v.x.upper, l, v.z.lower }));
+	hsi.push_back(makeOuterHex({- l, - l, v.z.upper }, { v.x.lower, v.y.upper, v.z.lower }));
+	K.push_back(Koutter);
+	K.push_back(Koutter);
+	K.push_back(Koutter);
+	K.push_back(Koutter);
+
+	/*
+	//add 16 external quadrangles
+	auto eq1 = makeOuterHex({ v.x.lower, v.y.lower - l, v.z.upper }, { v.x.upper + l, v.y.lower, v.z.lower }).splitTo4();
+	auto eq2 = makeOuterHex({ v.x.upper, v.y.lower, v.z.upper }, { v.x.upper + l, v.y.upper + l, v.z.lower }).splitTo4();
+	auto eq3 = makeOuterHex({ v.x.lower - l, v.y.upper, v.z.upper }, { v.x.upper, v.y.upper + l, v.z.lower }).splitTo4();
+	auto eq4 = makeOuterHex({ v.x.lower - l, v.y.lower - l, v.z.upper }, { v.x.lower, v.y.upper, v.z.lower }).splitTo4();
+	hsi.insert(hsi.end(), eq1.cbegin(), eq1.cend());
+	hsi.insert(hsi.end(), eq2.cbegin(), eq2.cend());
+	hsi.insert(hsi.end(), eq3.cbegin(), eq3.cend());
+	hsi.insert(hsi.end(), eq4.cbegin(), eq4.cend());
+	for(int i = 0; i < 16; ++i)
+		K.push_back(Koutter);
+	*/
 }
 
 template <class VAlloc>
@@ -296,7 +333,7 @@ public:
 		//InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		const VolumeMod v = Volume{ { 0, 8, 480 },{ 0, 8, 480 },{ -8, 0, 20 } };
+		const VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 20 } };
 		const limits fieldDimX = { 0, 8, 120 }, fieldDimY = { 0, 8, 120 };
 		const Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 		const double Kouter = 0.02;
@@ -313,7 +350,7 @@ public:
 		vector<Point> J0(hsi.size());
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
-		const auto &fOn = [&hsi, &H, &K, &fieldDimX, &fieldDimY](const string fname) {
+		const auto &fOn = [&hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
 			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
 			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
 			int pp = -1;

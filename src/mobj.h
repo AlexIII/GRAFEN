@@ -320,6 +320,29 @@ public:
 	Hexahedron(const Quadrangle &qUpper, const Quadrangle &qLower, const Point dens = 0) :
 		Hexahedron({ qUpper.p1, qUpper.p2, qUpper.p3, qUpper.p4, qLower.p1, qLower.p2, qLower.p3, qLower.p4}, dens) {}
 
+	std::vector<Hexahedron> splitTo4() const {
+		const double cx = (p[0].x + p[2].x) / 2.;
+		const double cy = (p[0].y + p[1].y) / 2.;
+		auto makeHex = [&dens = (const Point&)dens](const Point& llt, const Point& rub) { //left low top, right upper bottom
+			return Hexahedron{ {
+				{ rub.x, rub.y, llt.z },
+				{ rub.x, llt.y, llt.z },
+				{ llt.x, rub.y, llt.z },
+				llt,
+				rub,
+				{ rub.x, llt.y, rub.z },
+				{ llt.x, rub.y, rub.z },
+				{ llt.x, llt.y, rub.z }
+				}, dens };
+		};
+		return {
+			makeHex({cx, cy, p[3].z }, p[4]),
+			makeHex({ p[3].x, cy, p[3].z }, { cx, p[6].y, p[6].z }),
+			makeHex(p[3], {cx, cy, p[7].z }),
+			makeHex({ cx, p[3].y, p[3].z },{ p[5].x, cy, p[5].z })
+		};
+	}
+
 	std::vector<Quadrangle> splitQr() const {
 		std::vector<Quadrangle> qrs = {
 			Quadrangle(p[2], p[3], p[1], p[0]),
