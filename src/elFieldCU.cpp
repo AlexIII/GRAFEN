@@ -296,7 +296,8 @@ public:
 		//InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		const VolumeMod v = Volume{ { 0, 8, 120 },{ 0, 8, 120 },{ -8, 0, 20 } };
+		const VolumeMod v = Volume{ { 0, 8, 480 },{ 0, 8, 480 },{ -8, 0, 20 } };
+		const limits fieldDimX = { 0, 8, 120 }, fieldDimY = { 0, 8, 120 };
 		const Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 		const double Kouter = 0.02;
 		const double Kinner = 0;
@@ -312,24 +313,28 @@ public:
 		vector<Point> J0(hsi.size());
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
-		const auto &fOn = [&hsi, &v, &H, &K](const string fname) {
-			Dat2D<Point> dat;
+		const auto &fOn = [&hsi, &H, &K, &fieldDimX, &fieldDimY](const string fname) {
+			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
 			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
 			int pp = -1;
-			for (int i = 0; i < v.y.n; ++i) {
-				for (int j = 0; j < v.x.n; ++j) {
-					const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
+			for (int i = 0; i < x.y.n; ++i) {
+				for (int j = 0; j < x.x.n; ++j) {
+					const Point p0{ x.x.atWh(j), x.y.atWh(i), H };
 					const Point res = solver->solve(p0) / (4*M_PI);
-					dat.es.push_back({ { p0.x, p0.y }, res });
+					x.data[i*x.x.n + j] = res.x;
+					y.data[i*x.x.n + j] = res.y;
+					z.data[i*x.x.n + j] = res.z;
 				}
-				const int p = (100 * (i + 1)) / v.y.n;
+				const int p = (100 * (i + 1)) / x.y.n;
 				if (p != pp) {
 					pp = p;
 					cout << p << "%" << endl;
 				}
 			}
 			cout << endl;
-			dat.write(fname);
+			x.toGrid().Write(fname + "_x.grd");
+			y.toGrid().Write(fname + "_y.grd");
+			z.toGrid().Write(fname + "_z.grd");
 		};
 		const auto &fJn = [&hsi, &K, &J0, this](vector<Point> &res) {
 			Bcast(hsi);
@@ -404,7 +409,7 @@ public:
 		}
 
 		//expJ("J0.dat");
-		fOn("wellField0.dat"s);
+		fOn("wellField0"s);
 		
 		const double eps = 1e-4;
 		const int maxIter = 10;
@@ -429,7 +434,7 @@ public:
 		Bcast(cont);
 
 		//expJ("Jn.dat");
-		fOn("wellField.dat"s);
+		fOn("wellField"s);
 
 		cout << "Master Done." << endl;
 	}

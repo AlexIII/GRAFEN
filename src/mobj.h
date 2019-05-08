@@ -70,21 +70,21 @@ private:
 };
 
 struct Field {
-	limits Llim;
-	limits Blim;
+	limits x;
+	limits y;
 	std::vector<double> data;
-	Field(const limits &Llim, const limits &Blim) : Llim(Llim), Blim(Blim) {
-		data.resize(Llim.n * Blim.n);
+	Field(const limits &x, const limits &y) : x(x), y(y) {
+		data.resize(x.n * x.n);
 	}
 	Grid toGrid(void) {
 		Grid g;
 		g.data = data;
-		g.nRow = Blim.n;
-		g.nCol = Llim.n;
-		g.xLL = Llim.lower;
-		g.yLL = Blim.lower;
-		g.xSize = Llim.dWh();
-		g.ySize = Blim.dWh();
+		g.nRow = y.n;
+		g.nCol = x.n;
+		g.xLL = x.lower;
+		g.yLL = y.lower;
+		g.xSize = x.dWh();
+		g.ySize = y.dWh();
 		return g;
 	}
 };

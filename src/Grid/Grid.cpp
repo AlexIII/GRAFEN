@@ -34,45 +34,14 @@ void Grid::WriteDouble(ofstream* fs, double value)
 	fs->write(reinterpret_cast<char*>(&value), sizeof value);
 }
 
-bool Grid::Init()
-{
-	data.clear();
-	nRow = 0;
-	nCol = 0;
-	xLL = 0;
-	yLL = 0;
-	xSize = 0;
-	ySize = 0;
+Grid::Grid(int nRow, int nCol, double xLL, double yLL, double xSize, double ySize) : 
+		nRow(nRow), nCol(nCol), xLL(xLL), yLL(yLL), xSize(xSize), ySize(ySize) {
+	data.resize(nRow*nCol);
 	zMin = 0;
 	zMax = 0;
 	Rotation = 0;
 	BlankValue = DBL_MAX;
 	fname = "defGridName.grd";
-	
-	return true;
-}
-
-Grid::Grid()
-{
-	Init();
-}
-
-Grid Grid::GenerateEmptyGrid(Grid& g)
-{
-	Grid result;
-	result.data.clear();
-	result.nRow = g.nRow;
-	result.nCol = g.nCol;
-	result.xLL = g.xLL;
-	result.yLL = g.yLL;
-	result.xSize = g.xSize;
-	result.ySize = g.ySize;
-	result.zMin = g.zMin;
-	result.zMax = g.zMax;
-	result.Rotation = g.Rotation;
-	result.BlankValue = g.BlankValue;
-
-	return result;
 }
 
 Grid::Grid(const string &fileName)
