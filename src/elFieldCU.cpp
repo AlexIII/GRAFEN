@@ -177,10 +177,10 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 	
 	//add 4 external quadrangles
 	const double l = 1e8;
-	hsi.push_back(makeOuterHex({v.x.lower, - l, v.z.upper}, { l, v.y.lower, v.z.lower }));
-	hsi.push_back(makeOuterHex({ v.x.upper, v.y.lower, v.z.upper }, { l, l, v.z.lower }));
-	hsi.push_back(makeOuterHex({- l, v.y.upper, v.z.upper }, { v.x.upper, l, v.z.lower }));
-	hsi.push_back(makeOuterHex({- l, - l, v.z.upper }, { v.x.lower, v.y.upper, v.z.lower }));
+	hsi.push_back(makeOuterHex({ xLim.lower, - l, v.z.upper}, { l, yLim.lower, v.z.lower }));
+	hsi.push_back(makeOuterHex({ xLim.upper, yLim.lower, v.z.upper }, { l, l, v.z.lower }));
+	hsi.push_back(makeOuterHex({- l, yLim.upper, v.z.upper }, { xLim.upper, l, v.z.lower }));
+	hsi.push_back(makeOuterHex({- l, - l, v.z.upper }, { xLim.lower, yLim.upper, v.z.lower }));
 	K.push_back(Koutter);
 	K.push_back(Koutter);
 	K.push_back(Koutter);
@@ -188,10 +188,10 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 
 	/*
 	//add 16 external quadrangles
-	auto eq1 = makeOuterHex({ v.x.lower, v.y.lower - l, v.z.upper }, { v.x.upper + l, v.y.lower, v.z.lower }).splitTo4();
-	auto eq2 = makeOuterHex({ v.x.upper, v.y.lower, v.z.upper }, { v.x.upper + l, v.y.upper + l, v.z.lower }).splitTo4();
-	auto eq3 = makeOuterHex({ v.x.lower - l, v.y.upper, v.z.upper }, { v.x.upper, v.y.upper + l, v.z.lower }).splitTo4();
-	auto eq4 = makeOuterHex({ v.x.lower - l, v.y.lower - l, v.z.upper }, { v.x.lower, v.y.upper, v.z.lower }).splitTo4();
+	auto eq1 = makeOuterHex({ xLim.lower, yLim.lower - l, v.z.upper }, { xLim.upper + l, yLim.lower, v.z.lower }).splitTo4();
+	auto eq2 = makeOuterHex({ xLim.upper, yLim.lower, v.z.upper }, { xLim.upper + l, yLim.upper + l, v.z.lower }).splitTo4();
+	auto eq3 = makeOuterHex({ xLim.lower - l, yLim.upper, v.z.upper }, { xLim.upper, yLim.upper + l, v.z.lower }).splitTo4();
+	auto eq4 = makeOuterHex({ xLim.lower - l, yLim.lower - l, v.z.upper }, { xLim.lower, yLim.upper, v.z.lower }).splitTo4();
 	hsi.insert(hsi.end(), eq1.cbegin(), eq1.cend());
 	hsi.insert(hsi.end(), eq2.cbegin(), eq2.cend());
 	hsi.insert(hsi.end(), eq3.cbegin(), eq3.cend());
@@ -330,10 +330,14 @@ public:
 	}
 
 	void run(int argc, char *argv[]) {
-		//InputParser inp(argc, argv);
+		InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		const VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 20 } };
+		VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 20 } };
+		inp["xn"] >> v.x.n;
+		inp["yn"] >> v.y.n;
+		inp["zn"] >> v.z.n;
+
 		const limits fieldDimX = { 0, 8, 120 }, fieldDimY = { 0, 8, 120 };
 		const Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
 		const double Kouter = 0.02;
@@ -377,8 +381,8 @@ public:
 			Bcast(hsi);
 			
 			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
-			vector<Point> fieldPoints(hsi.size());
-			std::transform(hsi.cbegin(), hsi.cend(), fieldPoints.begin(), [](const HexahedronWid &h) {return h.massCenter();});
+			vector<Point> fieldPoints(res.size());
+			std::transform(hsi.cbegin(), hsi.cbegin() + fieldPoints.size(), fieldPoints.begin(), [](const HexahedronWid &h) {return h.massCenter();});
 			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
 			int cnt = 0;
 			if (!isRoot()) {
@@ -395,7 +399,7 @@ public:
 			else {
 				cout << "result gather ok" << endl;
 				for (int i = 0; i < res.size(); ++i)
-					res[i] = (res[i] - hsi[i].dens * (4.*M_PI / 3.)) * K[i] + J0[i];
+					res[i] = - (res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
 			}
 			
 			/*
@@ -425,7 +429,6 @@ public:
 					const Point p0 = h.massCenter();
 					dat.es.push_back({ { p0.x, p0.y }, h.dens });
 				}
-				cout << "\r" << (100 * (i + 1)) / v.y.n << "%";
 			}
 			cout << endl;
 			dat.write(fname);

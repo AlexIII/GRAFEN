@@ -123,6 +123,9 @@ public:
 	CUDA_HOST_DEV_FUN operator Point2D() const {
 		return { x, y };
 	}
+	CUDA_HOST_DEV_FUN Point operator-() const {
+		return { -x, -y, -z };
+	}
 	CUDA_HOST_DEV_FUN Point operator-(const Point& p) const {
 		return {x-p.x, y-p.y, z-p.z};
 	}
