@@ -254,27 +254,29 @@ public:
 
 Point intHexTr(const Point &p0, const HexahedronWid &h);
 
-void hexTest(int argc, char *argv[]) {
+void hexTest() {
 	Hexahedron h({
-		{ 20, 20, 0 },{ -20, 20, 0 },{ 20, -20, 0 },{ -20, -20, 0 },
-		{ 20, 20, -4 },{ -20, 20, -4 },{ 20, -20, -4 },{ -20, -20, -4 }
+		{ 20, 20, 0 },{ 20, -20, 0 },{ -20, 20, 0 },{ -20, -20, 0 },
+		{ 20, 20, -4 },{ 20, -20, -4 },{ -20, 20, -4 },{ -20, -20, -4 }
 	}, Point{ 14, 14, 35 }*0.2);
 	auto hw = HexahedronWid(h);
-	double H = 0.25;
+	double H = -0.25;
 
 
 	cout << "Solving..." << endl;
 	Dat2D<Point> dat;
-	auto l = limits{ -20 + 0.00001, 20 + 0.00001, 40 };
+	auto l = limits{ -25 + 0.00001, 25 + 0.00001, 40 };
 	for (double i = 0; i < l.n; ++i) {
 		for (int j = 0; j < l.n; ++j) {
 			const Point p0{ l.atWh(j), l.atWh(i), H };
-			const Point res = intHexTr(p0, hw) / (4 * M_PI);
+			const Point res = (-intHexTr(p0, hw)
+					 + (h.isIn(p0)? h.dens * (4.*M_PI / 3.) : Point())
+				) / (4 * M_PI);
 			dat.es.push_back({ { p0.x, p0.y }, res });
 		}
 	}
 
-	dat.write("cubeFieldSZ.dat"s);
+	dat.write("cubeFieldSZ_IN.dat"s);
 	cout << "Done." << endl;
 }
 
@@ -399,7 +401,7 @@ public:
 			else {
 				cout << "result gather ok" << endl;
 				for (int i = 0; i < res.size(); ++i)
-					res[i] = - (res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
+					res[i] = - (res[i] - hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
 			}
 			
 			/*
@@ -685,6 +687,9 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+	hexTest();
+	return 0;
+
 	bool isRoot = true;
 	try {
 		WellDemagCluster().run(argc, argv);

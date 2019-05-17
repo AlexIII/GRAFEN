@@ -416,6 +416,12 @@ public:
 		return res;
 	}
 
+	bool isIn(const Point& tp) const {
+		return p[0].x > tp.x && p[7].x < tp.x &&
+			p[0].y > tp.y && p[7].y < tp.y &&
+			p[0].z > tp.z && p[7].z < tp.z;
+	}
+
 private:
 	//возврещает 1 если у i-го четырехугольника нормаль внешняя, иначе -1
 	static int isExtNorm(const std::vector<Quadrangle> &qrs, const int i) {
