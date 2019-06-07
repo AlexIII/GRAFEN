@@ -335,7 +335,7 @@ public:
 		InputParser inp(argc, argv);
 
 		const string oFname = "wellField.dat";
-		VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 20 } };
+		VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
 		inp["xn"] >> v.x.n;
 		inp["yn"] >> v.y.n;
 		inp["zn"] >> v.z.n;
@@ -363,7 +363,7 @@ public:
 			for (int i = 0; i < x.y.n; ++i) {
 				for (int j = 0; j < x.x.n; ++j) {
 					const Point p0{ x.x.atWh(j), x.y.atWh(i), H };
-					const Point res = solver->solve(p0) / (4*M_PI);
+					const Point res = -solver->solve(p0) / (4*M_PI);
 					x.data[i*x.x.n + j] = res.x;
 					y.data[i*x.x.n + j] = res.y;
 					z.data[i*x.x.n + j] = res.z;
@@ -401,7 +401,7 @@ public:
 			else {
 				cout << "result gather ok" << endl;
 				for (int i = 0; i < res.size(); ++i)
-					res[i] = - (res[i] - hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
+					res[i] = (-res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
 			}
 			
 			/*
@@ -687,9 +687,6 @@ private:
 };
 
 int main(int argc, char *argv[]) {
-	hexTest();
-	return 0;
-
 	bool isRoot = true;
 	try {
 		WellDemagCluster().run(argc, argv);
