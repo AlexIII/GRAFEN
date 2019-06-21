@@ -53,7 +53,7 @@ public:
 		try {
 			inp.at(key);
 			tmp = true;
-		}catch(std::out_of_range &ex) {}
+		}catch(std::out_of_range &) {}
 		return tmp;
 	}
 

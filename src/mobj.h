@@ -224,6 +224,16 @@ public:
 		return vp.norm();
 	}
 
+	bool getSide(const Point& p) const {
+		const double	xx1 = p.x - p1.x, yy1 = p.y - p1.y, zz1 = p.z - p1.z,
+						xx2 = p.x - p2.x, yy2 = p.y - p2.y, zz2 = p.z - p2.z,
+						xx3 = p.x - p3.x, yy3 = p.y - p3.y, zz3 = p.z - p3.z;
+		const auto& minor = [](const double a, const double b, const double c, const double d) {
+			return a*d - b*c;
+		};
+		return (xx1*minor(yy2, zz2, yy3, zz3) - yy1*minor(xx2, zz2, xx3, zz3) + zz1*minor(xx2, yy2, xx3, yy3)) > 0;
+	}
+
 	friend std::ostream& operator<<(std::ostream& os, const Triangle& q);
 };
 
@@ -250,6 +260,9 @@ public:
 	}
 	Point center() const {
 		return p1 + (p3 - p1) / 2; //NOT REAL
+	}
+	Quadrangle operator+(const Point& p) const {
+		return { p1 + p, p2 + p, p3 + p, p4 + p };
 	}
 };
 
@@ -360,6 +373,17 @@ public:
 		return qrs;
 	}
 
+	std::vector<Triangle> splitFaces() const {
+		return {
+			Triangle(p[2], p[3], p[1]),
+			Triangle(p[0], p[4], p[6]),
+			Triangle(p[3], p[7], p[5]),
+			Triangle(p[0], p[1], p[5]),
+			Triangle(p[6], p[7], p[3]),
+			Triangle(p[4], p[5], p[7])
+		};
+	}
+
 	std::vector<Tetrahedron> splitTh() const {
 		std::vector<Tetrahedron> qrs = {
 			Tetrahedron(p[0], p[4], p[5], p[6]),
@@ -415,13 +439,18 @@ public:
 		res[2].mA = v.z;
 		return res;
 	}
-
+	/*
 	bool isIn(const Point& tp) const {
 		return p[0].x > tp.x && p[7].x < tp.x &&
 			p[0].y > tp.y && p[7].y < tp.y &&
 			p[0].z > tp.z && p[7].z < tp.z;
 	}
-
+	*/
+	bool isIn(const Point& p) const {
+		for (const auto& t : splitFaces())
+			if (t.getSide(p)) return false;
+		return true;
+	}
 private:
 	//возврещает 1 если у i-го четырехугольника нормаль внешняя, иначе -1
 	static int isExtNorm(const std::vector<Quadrangle> &qrs, const int i) {
@@ -432,7 +461,6 @@ private:
 };
 
 #define CALC_NORMALS_ON_DEMAND
-
 class HexahedronWid : public Hexahedron {
 public:
 #ifndef CALC_NORMALS_ON_DEMAND

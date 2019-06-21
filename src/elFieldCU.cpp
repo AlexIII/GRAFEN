@@ -106,14 +106,17 @@ struct QuadrangleRef {
 	operator Quadrangle() const {
 		return { p1, p2, p3, p4 };
 	}
-	Quadrangle operator+(const Point& p) const {
-		return { p1 + p, p2 + p, p3 + p, p4 + p };
-	}
 };
 
 template <class VAlloc>
-void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const double Koutter, const Point Jinner, const double Kinner, 
+void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const double Koutter, const vector<double> Kinner,
 		vector<HexahedronWid, VAlloc> &hsi, vector<double> &K) {
+
+	Assert(Kinner.size() == v.z.n);
+
+	const Point Joutter = Hprime*Koutter;
+	//const Point J0inner = Hprime*Kinner;
+
 	//make flat mesh
 	vector<Point> mesh((v.x.n+1) * (v.y.n+1));
 	const limits xLim = { v.x.lower - v.x.dWh() / 2.,  v.x.upper + v.x.dWh() / 2., v.x.n };
@@ -130,11 +133,8 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 	
 	//make lateral circle in mesh
 	for (QuadrangleRef& q : qrs) {
-		if (q.isIn(well)) {
-			q.J = Jinner;
-			q.k = Kinner;
+		if (q.isIn(well))
 			q.inner = true;
-		}
 	}
 	for (QuadrangleRef& q : qrs) {
 		if (!q.inner && q.isCrossing(well)) {
@@ -154,12 +154,15 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Joutter, const d
 		for (int yi = 0; yi < yLim.n; ++yi)
 			for (int xi = 0; xi < xLim.n; ++xi) {
 				const QuadrangleRef& cur = qrs[yi*xLim.n + xi];
+				const double Kval = cur.inner ? Kinner[zi] : cur.k;
+				const Point Jval = cur.inner ? Hprime*Kinner[zi] : cur.J;
+
 				const int ind = (zi*yLim.n + yi)*xLim.n + xi;
 				hsi[ind] = Hexahedron{
-					cur + Point{0, 0, v.z.at(zi)},
-					cur + Point{0, 0, v.z.at(zi + 1)},
-					cur.J};
-				K[ind] = cur.k;
+					(Quadrangle)cur + Point{0, 0, v.z.at(zi)},
+					(Quadrangle)cur + Point{0, 0, v.z.at(zi + 1)},
+					Jval };
+				K[ind] = Kval;
 			}
 
 	auto makeOuterHex = [&Joutter](const Point& llt, const Point& rub) { //left low top, right upper bottom
@@ -245,7 +248,7 @@ public:
 		Dat3D<Point> dat;
 		for (int k = 0; k < z.n; ++k)
 			for (int j = 0; j < y.n; ++j)
-				for (int i = 0; i < x.n; +i) {
+				for (int i = 0; i < x.n; ++i) {
 					const Point p0{ x.atWh(i), y.atWh(j), z.atWh(k) };
 					dat.es.push_back({ { p0.x, p0.y, p0.z }, Point() });
 				}
@@ -280,41 +283,6 @@ void hexTest() {
 	cout << "Done." << endl;
 }
 
-void wellTest(int argc, char *argv[]) {
-	const string oFname = "wellField.dat";
-	const VolumeMod v = Volume{ { 0, 4, 40 },{ 0, 4, 40 },{ -4, 0, 40 } };
-	const Cylinder well = { { { 2, 2 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-	const double Kouter = 0.02;
-	const double Kinner = 0;
-	const Point Hprime = { 14, 14, 35 }; //~40A/m
-	const double H = 0.25;
-
-	cout << "Generating model..." << endl;
-	const Point J0outer = Hprime*Kouter;
-	const Point J0inner = Hprime*Kinner;
-	vector<HexahedronWid> hsi;
-	vector<double> K;
-	wellGen(v, well, J0outer, Kouter, J0inner, Kinner, hsi, K);
-	vector<Point> J0(hsi.size());
-	transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
-
-	cout << "Solving..." << endl;
-	Dat2D<Point> dat;
-	unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
-	for (int i = 0; i < v.y.n; ++i) {
-		for (int j = 0; j < v.x.n; ++j) {
-			const Point p0{ v.x.atWh(j), v.y.atWh(i), H };
-			const Point res = solver->solve(p0) / (4 * M_PI);
-			dat.es.push_back({ { p0.x, p0.y }, res });
-		}
-		cout << "\r" << (100*(i + 1))/ v.y.n << "%";
-	}
-	cout << endl;
-
-	dat.write("wellField.dat"s);
-	cout << "Done." << endl;
-}
-
 class WellDemagCluster : public MPI {
 public:
 	const int maxGPUmemMB = 5000;
@@ -333,28 +301,86 @@ public:
 
 	void run(int argc, char *argv[]) {
 		InputParser inp(argc, argv);
+		/*
+		if (!isRoot()) return;
+		Quadrangle q{ Point{ 1,1,1 }, Point{ 1,-1,1 }, Point{ -1,1,1 }, Point{ -1,-1,1 } };
+		Hexahedron h(q, q + Point{ 0.2,0.3,-2 });
+		vector<Point> tests = { {0.1,0.1,0.1}, {0, 0, 4},{ 4, 0, 0 },{ 0, 4, -2 } };
+		for (auto &test : tests) {
+			for (auto &tri : h.splitFaces())
+				cout << tri.getSide(test) << " ";
+			cout <<(h.isIn(test) ? "In" : "Out");
+			cout << endl;
+		}
+		return;
+		*/
 
 		const string oFname = "wellField.dat";
 		VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
 		inp["xn"] >> v.x.n;
 		inp["yn"] >> v.y.n;
-		inp["zn"] >> v.z.n;
+		if(inp.exists("zn")) inp["zn"] >> v.z.n;
 
-		const limits fieldDimX = { 0, 8, 120 }, fieldDimY = { 0, 8, 120 };
-		const Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-		const double Kouter = 0.02;
-		const double Kinner = 0;
+		const limits fieldDimX = { 0, 8.1, 60 }, fieldDimY = { 0, 8.1, 60 };
+		Cylinder well = { { { 4.1, 4.1 }, 0.25 }, 100 }; //x_cener, y_center, r, h
+		inp["rwell"] >> well.r;
+		double Kouter = 0.02;
+		const double Kinner0 = 0.04;
 		const Point Hprime = { 14, 14, 35 }; //~40A/m
-		const double H = 0.25;
+		double H = 0.25;
+		if (inp.exists("H")) inp["H"] >> H;
+
+		//read K inner
+		vector<double> Kinner(v.z.n, Kinner0);
+		if (inp.exists("kin")) {
+			string KinnerFname;
+			inp["kin"] >> KinnerFname;
+			Dat2D<> Kin(KinnerFname);
+			v.z = { -Kin.xMax(), 0, (int)Kin.size() };
+			Kinner.resize(v.z.n);
+			double meanK = 0;
+			for (int i = 0; i < Kin.size(); ++i)
+				meanK += Kinner[Kin.size() - i - 1] = Kin[i].p.y / 1e5;
+			meanK /= Kin.size();
+			Kouter = meanK;
+			cout << "Kouter: " << Kouter << endl;
+		}
 		
 		cout << "Generating model..." << endl;
-		const Point J0outer = Hprime*Kouter;
-		const Point J0inner = Hprime*Kinner;
 		vector<HexahedronWid> hsi;
 		vector<double> K;
-		wellGen(v, well, J0outer, Kouter, J0inner, Kinner, hsi, K);
+		wellGen(v, well, Hprime, Kouter, Kinner, hsi, K);
 		vector<Point> J0(hsi.size());
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
+
+		const auto &fOnDat = [&hsi, &H, &fieldDimX, &fieldDimY](Dat3D<Point> &res) {
+			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			
+			for (auto &i : res)
+				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
+
+			int cnt = 0;
+			for (auto &i : res) {
+				const Point p0{ i.p.x, i.p.y, i.p.z };
+				const auto el = std::find_if(hsi.cbegin(), hsi.cend(), [&](const auto& h) {return h.isIn(p0); });
+				if (el != hsi.cend()) {
+					++cnt;
+					i.val += el->dens / 3.;
+				}
+			}
+
+			return cnt;
+		};
+
+		const auto &fInWell = [&v, &well, &fOnDat](const string fname) {
+			Dat3D<Point> dat;
+			for (int i = 1; i < v.z.n; ++i)
+				dat.es.push_back({{ well.center.x, well.center.y, v.z.atWh(i) - v.z.d() / 2.}});
+			const int cnt = fOnDat(dat);
+			if (cnt != v.z.n-1)
+				cout << "WARNING! 'Inside' count: " << cnt << "/" << v.z.n << endl;
+			dat.write(fname);
+		};
 
 		const auto &fOn = [&hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
 			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
@@ -451,7 +477,9 @@ public:
 		}
 
 		//expJ("J0.dat");
+		fInWell("inWell0.dat"s);
 		fOn("wellField0"s);
+		cout << "No demag solving done" << endl;
 		
 		const double eps = 1e-4;
 		const int maxIter = 10;
@@ -477,6 +505,7 @@ public:
 
 		//expJ("Jn.dat");
 		fOn("wellField"s);
+		fInWell("inWell.dat"s);
 
 		cout << "Master Done." << endl;
 	}

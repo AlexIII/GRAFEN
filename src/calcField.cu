@@ -198,7 +198,6 @@ protected:
 
 class gFieldCUDAreplacingSolver : public gFieldCUDAsolver {
 public:
-
 	gFieldCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend, const double dotPotentialRad, 
 			const int tirBufSz) : gFieldCUDAsolver(qbegin, qend), dotPotentialRad(dotPotentialRad) {
 		qsCUDAprec.resize(tirBufSz);
