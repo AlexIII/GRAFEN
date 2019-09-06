@@ -14,10 +14,10 @@ The program is intended to work on distributed systems with CUDA accelerators.
 You will need these only if you want to build the program yourself. If you just want to run the binaries, see [*How to run the example*](#how-to-run-the-example) section bellow.
 
 - Visual Studio 2017+ (Community will do, select "Release" Configuration before building)
-- [CUDA 9.1](https://developer.nvidia.com/cuda-91-download-archive)
+- [CUDA 10.1](https://developer.nvidia.com/cuda-downloads)
 - [MS MPI](https://github.com/Microsoft/Microsoft-MPI)
 - [GeographicLib 1.49](https://sourceforge.net/projects/geographiclib/)
-- Boost 1.66.0
+- [Boost 1.71.0](https://www.boost.org/users/history/version_1_71_0.html)
 
 The program primarily designed to work with Surfer (© Golden Software) [Grid File Format](http://voxlerhelp.goldensoftware.com/voxler.htm#t=File_Formats%2FSurfer_7_Grid_File_Format.htm)
 
@@ -92,7 +92,7 @@ If you're using our program in your work, please, reference this repo and our pa
 
 `resmodel_timan` in *releases* is a real solution of gravity filed inversion problem for a part of Timan-Pechora platform (Russia). The methodology of acquiring such a result is described in the next paper (please reference it if you're going to use the model in your work):
 
-3. [Martyshko P.S., Ladovskii I.V., Byzov D.D., Tsidaev A.G. Gravity Data Inversion with Method of Local Corrections for Finite Elements Models // Geosciences. 2018. Vol. 8. Issue 10. № 373. DOI: 10.3390/geosciences8100373](https://www.mdpi.com/2076-3263/8/10/373)
+3. [*Martyshko P.S., Ladovskii I.V., Byzov D.D., Tsidaev A.G.* Gravity Data Inversion with Method of Local Corrections for Finite Elements Models // Geosciences. 2018. Vol. 8. Issue 10. № 373. DOI: 10.3390/geosciences8100373](https://www.mdpi.com/2076-3263/8/10/373)
 
 ## License
 
