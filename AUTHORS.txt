@@ -1,0 +1,4 @@
+# List of the AUTHORS of GRAFEN
+
+Alexander Chernoskutov <endoftheworld@bk.ru>
+Denis Byzov <ivanov389@gmail.ru>

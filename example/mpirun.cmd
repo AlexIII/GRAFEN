@@ -1,0 +1,1 @@
+"C:\Program Files\Microsoft MPI\Bin\mpiexec" -l -machinefile hosts.txt -dir C:\%cd:~3% %*

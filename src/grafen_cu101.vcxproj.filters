@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Grid">
+      <UniqueIdentifier>{c035e4a0-2fe6-48a8-b40d-4d5797773316}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Grid\Grid.cpp">
+      <Filter>Grid</Filter>
+    </ClCompile>
+    <ClCompile Include="elFieldCU.cpp" />
+    <ClCompile Include="mobj.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Grid\Grid.h">
+      <Filter>Grid</Filter>
+    </ClInclude>
+    <ClInclude Include="autoReplRadi.h" />
+    <ClInclude Include="calcField.h" />
+    <ClInclude Include="cuVar.h" />
+    <ClInclude Include="Dat.h" />
+    <ClInclude Include="DataFile.h" />
+    <ClInclude Include="GrdDatConv.h" />
+    <ClInclude Include="inputLoader.h" />
+    <ClInclude Include="inputParser.h" />
+    <ClInclude Include="mobj.h" />
+    <ClInclude Include="MPIpool.h" />
+    <ClInclude Include="MPIwrapper.h" />
+    <ClInclude Include="Quadrangles.h" />
+    <ClInclude Include="sharedMem.h" />
+    <ClInclude Include="Stopwatch.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="calcField.cu" />
+  </ItemGroup>
+</Project>
