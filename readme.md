@@ -2,7 +2,7 @@
 
 ## Description
 
-<img width=400 align="right" src="./GRAFEN.jpg" /> A performance-effective program for gravity field* calculation for layered ellipsoidal density model. The program can calculate gravity filed in arbitrary points outside the density model. Input density model discretization is assumed to be regular in Gauss-Kruger projection (thus, irregular in geodetic coordinates).
+<img width=400 align="right" src="./GRAFEN.jpg" /> A performance-effective program for gravity field* calculation for layered ellipsoidal density model. The program can calculate gravity filed in arbitrary points outside the density model. Input density model discretization is assumed to be regular in Gauss-Kruger (aka Transverse Mercator) projection (thus, irregular in geodetic coordinates).
 
 The program is intended to work on distributed systems with CUDA accelerators.
 
