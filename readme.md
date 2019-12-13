@@ -100,3 +100,7 @@ This software is distributed under MIT License. © Alexander Chernoskutov, Denis
 
 The files of `resmodel_timan`  are distributed under MIT License. © Bulashevich Institute of Geophysics, Ural Branch of the Russian Academy of Sciences, Yekaterinburg, Russia
 
+## Acknowledgements
+
+Development of this software was supported by the Russian Foundation for Basic Research (project no. 17-05-00916_a). 
+
