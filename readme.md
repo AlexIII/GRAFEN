@@ -11,9 +11,9 @@ The program is intended to work on distributed systems with CUDA accelerators.
 
 
 ## Dependencies
-You will need these only if you want to build the program yourself. If you just want to run the binaries, see [*How to run the example*](#how-to-run-the-example) section bellow.
+You will need these only if you want to build the program yourself. If you just want to run the binaries, see [*How to run the example*](#how-to-run-the-example) section below.
 
-- Visual Studio 2017+ (Community will do, select "Release" Configuration before building)
+- Visual Studio 2017+ (Community version will do, select "Release" Configuration before building)
 - [CUDA 10.1](https://developer.nvidia.com/cuda-downloads)
 - [MS MPI](https://github.com/Microsoft/Microsoft-MPI)
 - [GeographicLib 1.49](https://sourceforge.net/projects/geographiclib/)
@@ -25,7 +25,7 @@ For now we're only targeting Windows systems, but the source code itself is not 
 
 ## Hardware requirements
 
-- Nvidia GPU with CUDA compute capability 3.5 or higher (any modern 2015+ Nvidia GPU  will do)
+- Nvidia GPU with CUDA compute capability 3.5 or higher (any modern 2015+ Nvidia GPU will do)
 - At least 2GB GPU memory to run the example
 
 ## Program arguments
@@ -42,7 +42,7 @@ or
 `-grd7 grdField.grd`			- Surfer grd7 file. Grid dimensions are used as file input. All coordinates in Gauss-Kruger projection (km). Old grid values are ignored and will be rewritten.
 
 Specify input parameters:
-`-Hf 0.00001`						- Height over the Ellipsoid on which the field is being calculated (km). (It is not recommended to pass exactly 0)
+`-Hf 0.00001`						- Height over the Ellipsoid on which the field is being calculated (km). This parameter is ignored if `-dat3D` was specified. It is not recommended to pass exactly 0.
 `-dens dens_model`			- Directory with layered density model (set of grd7 files)
 `-Hfrom -81` 				- Depth of the lower grid layer (density model)
 `-Hto 0` 					- Depth of the upper grid layer (density model)
