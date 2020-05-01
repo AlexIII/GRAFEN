@@ -176,44 +176,10 @@ public:
 		return es.size();
 	}
 
-	void map(std::function<void (Element &)> fun) {
+	void forEach(std::function<void (Element &)> fun) {
 		for(size_t i = 0; i < es.size(); ++i)
 			fun(es[i]);
 	}
-
-	/*
-	void mapPB(std::function<void (Element &)> fun) {
-		const size_t max = es.size();
-		size_t cur = 0;
-		std::cout << "  0.00%" << std::flush;
-		for(size_t i = 0; i < es.size(); ++i) {
-			fun(es[i]);
-			++cur;
-			printf("\r%3u.%02u%%", (unsigned)(cur*100UL/max), (unsigned)((cur*10000UL/max)%100));
-			std::cout << std::flush;
-		}
-		std::cout << "\r 100.00%  " << std::endl;
-	}	
-
-	void mapPB(std::function<void(Element &)> fun) {
-		Stopwatch tmr;
-		tmr.start();
-		const size_t max = es.size();
-		size_t cur = 0;
-		std::cout << "0%" << std::endl;
-		unsigned pr = 0;
-		for (size_t i = 0; i < es.size(); ++i) {
-			fun(es[i]);
-			++cur;
-			const unsigned p = cur * 100UL / max;
-			if (pr != p) {
-				std::cout << p << "% : " << tmr.stop() << std::endl;
-				pr = p;
-			}
-		}
-		std::cout << "100%" << std::endl;
-	}
-	*/
 };
 
 using Dat2D = Dat<DatPoint2D>;

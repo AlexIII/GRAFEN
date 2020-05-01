@@ -179,6 +179,9 @@ public:
 		vector<MassPoint> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
+		if (dotPotentialRad < -1e-6) cout << "Precise computing" << endl;
+		else if (dotPotentialRad > 1e-6) cout << "Selective computing" << endl;
+		else cout << "Imprecise computing" << endl;
 	}
 
 	~gFieldCUDAsolver() {
@@ -187,19 +190,28 @@ public:
 
 	double solve(const Point &p0, const Point &n0) override {
 		double res = 0;
+		const bool preciseOnly = dotPotentialRad < -1e-6;
 
-		//rough computing
-		triSz = 0;					//reset precise elemets counter
-		int* const cnt = &triSz;	//precise elemets counter
-		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
-		const double rad = dotPotentialRad;
-		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), 0., thrust::plus<double>(),
-			[=] __device__(const HexahedronWid& h, const MassPoint &mp)->double {
-			if ((mp - p0).eqNorm() > rad)
-				return gMassPoint(p0, n0, mp.mass, mp);
-			hPres[atomicAdd(cnt, 1)] = h;
-			return 0;
-		});
+		if (!preciseOnly) {
+			//rough computing
+			triSz = 0;					//reset precise elemets counter
+			int* const triSzDevPtr = triSz.raw();	//precise elemets counter
+			HexahedronWid * const hPrec = qsCUDAprec.data().get(); //precise elemets buffer
+			const double rad = dotPotentialRad;
+			const bool impreciseOnly = dotPotentialRad < 1e-6;
+
+			res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), 0., thrust::plus<double>(),
+				[=] __device__(const HexahedronWid& h, const MassPoint &mp)->double {
+				if (impreciseOnly || (mp - p0).eqNorm() > rad)
+					return gMassPoint(p0, n0, mp.mass, mp);
+				hPrec[atomicAdd(triSzDevPtr, 1)] = h;
+				return 0;
+			});
+			//if (triSz != 0 && triSz >= qsCUDAprec.size()) throw runtime_error("Not enough memory for precise elemetns. Needed: " + std::to_string(triSz) + ", available: " + std::to_string(qsCUDAprec.size()) + ".");
+		} else {
+			triSz = qsCUDA.size();
+		}
+		const auto &precTarget = preciseOnly ? qsCUDA : qsCUDAprec;
 
 		//precise computing
 		const int blockSize = triSz;	//precise elemets buffer size
@@ -208,7 +220,7 @@ public:
 			return -h.dens*intHexTr(p0, n0, h);
 		};
 		const auto& triClac = [&](const auto &execPol) {
-			return thrust::transform_reduce(execPol, qsCUDAprec.begin(), qsCUDAprec.begin() + blockSize, triKr, 0., thrust::plus<double>());
+			return thrust::transform_reduce(execPol, precTarget.begin(), precTarget.begin() + blockSize, triKr, 0., thrust::plus<double>());
 		};
 		res += blockSize > 100 ? triClac(thrust::device) : triClac(thrust::host);
 

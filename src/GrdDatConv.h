@@ -16,6 +16,16 @@ public:
 				});
 		return dat;
 	}
+	static Dat3D toDat3D(const Grid &g, const double val = 0) {
+		Dat3D dat;
+		for (int y = 0; y < g.nRow; ++y)
+			for (int x = 0; x < g.nCol; ++x)
+				dat.es.push_back({
+					{ g.xLL + x*g.xSize, g.yLL + y*g.ySize, g.data[y*g.nCol+x] },
+					val
+				});
+		return dat;
+	}
 	template <typename PointType>
 	static Grid toGrd(const Dat<PointType>& dat, int nCol, int nRow) {
 		Grid g;

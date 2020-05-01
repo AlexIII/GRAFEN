@@ -1,7 +1,7 @@
 ﻿
 #define GEOGRAPHICLIB_SHARED_LIB 0
+#define BOOST_ALL_NO_LIB
 #include <GeographicLib/TransverseMercator.hpp>
-
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -11,6 +11,7 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+#include <variant>
 #include "mobj.h"
 #include "calcField.h"
 #include "inputLoader.h"
@@ -20,7 +21,7 @@
 #include "MPIpool.h"
 
 #include "sharedMem.h"
-using gElementsShared = std::vector<HexahedronWid, ShmemAllocator>;
+using gElementsShared = std::vector<HexahedronWid, ShmemAllocator<HexahedronWid>>;
 
 using namespace std;
 using GeographicLib::TransverseMercator;
@@ -30,18 +31,11 @@ using GeographicLib::TransverseMercator;
 
 #define MIN_DENS 1e-8
 
-#define R_EQ 6378.245		//equatorial radius in km
-#define R_PL 6356.863		//polar radius in km
 
 //#define R_EQ 6367.558487
 //#define R_PL 6367.558487
 
-string toStr(int v) {
-	char buff[30];
-	itoa(v, buff, 10);
-	return string(buff);
-}
-#define Assert(exp) do { if (!(exp)) throw runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(toStr(__LINE__))); } while (0)
+#define Assert(exp) do { if (!(exp)) throw runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
 
 //get amount of quadrangles for nx*ny*nz discretization
 int getQdAm(const int nx, const int ny, const int nz) {
@@ -72,6 +66,32 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 	const int v1 = f(Nlim)*f(Elim)*f(Hlim);
 	const int v2 = Nlim.n*Elim.n*Hlim.n;
 	return min(v1, v2);
+}
+
+//construct density model from topography model (mesh nodes in degrees)
+template <class VAlloc>
+void makeHexsTopo(const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
+	hsi.resize(xN * yN);
+
+#pragma omp parallel for
+	for(int yi = 0; yi < yN; ++yi)
+		for (int xi = 0; xi < xN; ++xi) {
+			Hexahedron h({
+				//above
+				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi + 1)), topo.at(xi + 1, yi + 1)),	//top right
+				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi + 1)), topo.at(xi + 1, yi)), //bottom right
+				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi)), topo.at(xi, yi + 1)), //top left
+				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi)), topo.at(xi, yi)), //bottom left
+				//below
+				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi + 1)), 0),	//top right
+				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi + 1)), 0), //bottom right
+				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi)), 0), //top left
+				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi)), 0), //bottom left
+			}, dens);
+
+			hsi[yi*xN + xi] = HexahedronWid(h);
+		}
 }
 
 //split dencity model to Hexahedrons
@@ -142,26 +162,72 @@ void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D::Element> psGK,
 	std::transform(resBegin, resBegin + (hsEnd - hsBegin), resBegin, [](auto &v) {return G_CONST*v; });
 }
 
-//calculate gravity field operator on a single node
-void calcFieldNode(const Ellipsoid &e, const double l0, unique_ptr<gFieldSolver> &solver,
+struct calcFieldNodeBase {
+	Ellipsoid e;
+	calcFieldNodeBase(const Ellipsoid &e) : e(e) {}
+};
+struct GeoModOpts : calcFieldNodeBase {
+	GeoModOpts(const Ellipsoid &e) : calcFieldNodeBase(e) {}
+};
+struct GeoNormOpts : calcFieldNodeBase {
+	GeoNormOpts(const Ellipsoid &e) : calcFieldNodeBase(e) {}
+};
+struct GKNormOpts : calcFieldNodeBase { 
+	double l0;
+	GKNormOpts(const Ellipsoid &e, const double l0) : calcFieldNodeBase(e), l0(l0) {}
+};
+using calcFieldNodeOpts = std::variant<GeoModOpts, GeoNormOpts, GKNormOpts>;
+
+//Calculate gravity field on a single node
+//If GKNormOpts: fp - field poinst in GK, field in the normal derection to reference ellipsoid in field point
+//If GeoNormOpts: fp - field poinst in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field in the normal derection to reference ellipsoid in field point
+//If GeoModOpts: fp - field poinst in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field module
+void calcFieldNode(const calcFieldNodeOpts &opts, unique_ptr<gFieldSolver> &solver,
 	const vector<Dat3D::Point> &fp, vector<double> &result) {
 	Assert(fp.size() == result.size());
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
 
-	auto Kr = [&](const Dat3D::Point &p, double& res) {
-		double l, B;
-
-		double x = xFromGK(p.x, l0);
-		proj.Reverse(toDeg(l0), x*1000., p.y*1000., B, l);
-		l = toRad(l);
-		B = toRad(B);
-		const Point p0 = e.getPoint(B, l, p.z);
-		const Point n0 = e.getNormal(B, l);
-		res += G_CONST * solver->solve(p0, n0);
-
+	auto calcGLNorm = [&](const GKNormOpts& opts) {
+		const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
+		for (size_t i = 0; i < fp.size(); ++i) {
+			const Dat3D::Point &p = fp[i];
+			double l, B;
+			double x = xFromGK(p.x, opts.l0);
+			proj.Reverse(toDeg(opts.l0), x*1000., p.y*1000., B, l);
+			l = toRad(l);
+			B = toRad(B);
+			const Point p0 = opts.e.getPoint(B, l, p.z);
+			const Point n0 = opts.e.getNormal(B, l);
+			result[i] += G_CONST * solver->solve(p0, n0);
+		}
 	};
-	for (size_t i = 0; i < fp.size(); ++i)
-		Kr(fp[i], result[i]);
+
+	auto calcGeoNorm = [&](const GeoNormOpts& opts) {
+		for (size_t i = 0; i < fp.size(); ++i) {
+			const Dat3D::Point &p = fp[i];
+			const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
+			const Point n0 = opts.e.getNormal(toRad(p.y), toRad(p.x));
+			result[i] += G_CONST * solver->solve(p0, n0);
+		}
+	};
+
+	//not finished
+	auto calcGeoMod = [&](const GeoModOpts& opts) {
+		for (size_t i = 0; i < fp.size(); ++i) {
+			const Dat3D::Point &p = fp[i];
+			const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
+			//result[i] += G_CONST * solver->solve(p0);
+		}
+	};
+
+	std::visit([&](auto&& opts) {
+		using T = std::decay_t<decltype(opts)>;
+		if constexpr (std::is_same_v<T, GeoModOpts>)
+			calcGeoMod(opts);
+		else if constexpr (std::is_same_v<T, GeoNormOpts>)
+			calcGeoNorm(opts);
+		else if constexpr (std::is_same_v<T, GKNormOpts>)
+			calcGLNorm(opts);
+	}, opts);
 }
 
 class ClusterSolver : public MPI {
@@ -212,7 +278,7 @@ public:
 		return sz / (sz / partSize + 1);
 	}
 
-	void calcField(Ellipsoid e, double l0, gElementsShared &qs, Dat3D &dat, double dotPotentialRad) {
+	void calcField(const calcFieldNodeOpts &opts, gElementsShared &qs, Dat3D &dat, double dotPotentialRad) {
 		//cout << "Dot potential replace radius: " << dotPotentialRad << endl;
 		if (isRoot())
 			cout << "Computing nodes: " << gridSize - 1 << endl;
@@ -230,7 +296,7 @@ public:
 			const Qiter qend = qs.begin() + min(i + partSize, qs.size());
 
 			cout << ":::part " << part + 1 << " out of " << parts << "::: size: " << qend - qbegin << endl;
-			calcWithPool(e, l0, qbegin, qend, dat, dotPotentialRad);
+			calcWithPool(opts, qbegin, qend, dat, dotPotentialRad);
 		}
 	}
 
@@ -254,7 +320,7 @@ public:
 	}
 
 private:
-	void calcWithPool(Ellipsoid e, double l0, const Qiter &qbegin, const Qiter &qend, Dat3D &dat, double dotPotentialRad) {
+	void calcWithPool(const calcFieldNodeOpts &opts, const Qiter &qbegin, const Qiter &qend, Dat3D &dat, double dotPotentialRad) {
 		const vector<Dat3D::Point> fp = dat.getPoints();
 		vector<double> result;
 		//blocking process with rank 0 until the result's been gathered
@@ -267,7 +333,7 @@ private:
 				if (!task.size()) break;
 				cout << "Task accepted " << ++cnt << " size: " << task.size()+1 << endl;
 				vector<double> result(task.size());
-				calcFieldNode(e, l0, solver, task, result);
+				calcFieldNode(opts, solver, task, result);
 				pool.submit(result);
 			}
 		}
@@ -278,10 +344,10 @@ private:
 	}
 };
 
-int main(int argc, char *argv[]) {
+int grafenMain(int argc, char *argv[]) {
 	try {
 		ClusterSolver cs;
-		Ellipsoid Earth(R_EQ, R_PL);
+		Ellipsoid Earth(DEF_R_EQ, DEF_R_PL);
 
 		//gElements qs;
 		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
@@ -337,8 +403,8 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (cs.isRoot()) {
-			cout << "Clearing output file. Do NOT stop me!" << endl;
 			inp.dat.set(0);
+			cout << "Clearing output file. Do NOT stop me!" << endl;
 			if(!inp.grdFile) inp.dat.write(inp.dat2D);
 			cout << "Clearing done. You may ctrl+c now." << endl;
 		}
@@ -349,7 +415,7 @@ int main(int argc, char *argv[]) {
 		//set approximate size of buffer
 		cs.triBufferSize = triBufferSize(inp.Nlim, inp.Elim, inp.Hlim, inp.dotPotentialRad);
 		//do the job
-		cs.calcField(Earth, inp.l0, qss, inp.dat, inp.dotPotentialRad);
+		cs.calcField(GKNormOpts{ Earth, inp.l0 }, qss, inp.dat, inp.dotPotentialRad);
 		const double time = tmr.stop();
 		if (cs.isRoot()) {
 			cout << "Computing finished: " << time << "sec." << endl << endl;
@@ -362,4 +428,71 @@ int main(int argc, char *argv[]) {
 	}
 	cout << "Done" << endl;
 	return 0;
+}
+
+template <class VAlloc>
+void saveAsDat(const vector<HexahedronWid, VAlloc> &hsi) {
+	Dat3D dat;
+	for (int i = 0; i < hsi.size(); ++i)
+		for (int pi = 0; pi < 8; ++pi)
+			dat.es.push_back({ { hsi[i].p[pi].x, hsi[i].p[pi].y, hsi[i].p[pi].z}, hsi[i].dens });
+	dat.write("shape.dat");
+}
+
+int topogravMain(int argc, char *argv[]) {
+
+	const auto& sectionStopwatch = [](const string& sectionName, const std::function<void(void)>& section) {
+		cout << sectionName << " started" << endl;
+		Stopwatch tmr;
+		tmr.start();
+		section();
+		const double time = tmr.stop();
+		cout << sectionName << " finished: " << time << "sec." << endl;
+	};
+
+	try {
+		ClusterSolver cs;
+		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
+		InputTopoGravFiled inp(argc, argv);
+		const Grid topoGrid(inp.topoGridFname);
+		const size_t qAm = (topoGrid.nCol - 1) * (topoGrid.nRow - 1);
+		cout << "Elements: " << qAm << endl;
+		cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";
+		gElementsShared &qss = cs.initShared(qAm); //for direct solver. Should not actually allocate memory untill resize().
+		cout << "Allocated." << endl;
+
+
+		//preprocessing
+		if(cs.isLocalRoot()) 
+			sectionStopwatch("Preprocessing", [&](){ makeHexsTopo(inp.refEllipsoid, topoGrid, inp.dens, qss); });
+		cs.Barrier();
+		const size_t qSize = qss.size();
+		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
+		//if(cs.isRoot()) saveAsDat(qss);
+		
+		//computation
+		Dat3D fieldDat = GDconv::toDat3D(topoGrid);
+		fieldDat.forEach([&](auto &el) { el.p.z += 0.00001; }); //elivate computation point above the mass volume a little
+		sectionStopwatch("Computing", [&]() {
+			//set approximate size of buffer
+			cs.triBufferSize = inp.pprr < 1e-6? 0 : qss.size() / 4;
+			//do the job
+			cs.calcField(GeoNormOpts{ inp.refEllipsoid }, qss, fieldDat, inp.pprr);
+		});
+
+		//save result
+		if (cs.isRoot())
+			GDconv::toGrd(fieldDat, topoGrid.nCol, topoGrid.nRow).Write(inp.gravGridFname);
+
+	} catch (exception &ex) {
+		cout << "Global exception: " << ex.what() << endl;
+		return 1;
+	}
+	cout << "Done" << endl;
+	return 0;
+}
+
+int main(int argc, char *argv[]) {
+	//return grafenMain(argc, argv);
+	return topogravMain(argc, argv);
 }

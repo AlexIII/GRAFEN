@@ -361,7 +361,7 @@ private:
 
 class Ellipsoid {
 public:
-	const double Req, Rpl, e, e_, n, f; //n - Third flattening, f - flattening
+	double Req, Rpl, e, e_, n, f; //n - Third flattening, f - flattening
 
 	Ellipsoid(double const Req, double const Rpl) : Req(Req), Rpl(Rpl),
 			e(sqrt(Req*Req - Rpl*Rpl)/Req), e_(sqrt(Req*Req - Rpl*Rpl)/Rpl), n((Req-Rpl)/(Req+Rpl)),

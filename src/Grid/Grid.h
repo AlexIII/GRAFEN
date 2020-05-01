@@ -45,6 +45,16 @@ public:
 	double getMin();
 	double getMax();
 
+	double at(const int col, const int row) const {
+		return data[row*nCol + col];
+	}
+	double xAt(const int col) const {
+		return xLL + col * xSize;
+	}
+	double yAt(const int row) const {
+		return yLL + row * ySize;
+	}
+
 	Grid& upScale(const int xFactor, const int yFactor) {
 		upScaleX(xFactor);
 		upScaleY(yFactor);

@@ -12,7 +12,7 @@ public:
 	cuVar(const T &v) : cuVar() {
 		set(v);
 	}
-	T* operator&() const { return (T*)p; }
+	T* raw() const { return (T*)p; }
 	operator T () const {
 		return get();
 	}

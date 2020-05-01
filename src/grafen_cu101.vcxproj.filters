@@ -20,7 +20,6 @@
     <ClInclude Include="calcField.h" />
     <ClInclude Include="cuVar.h" />
     <ClInclude Include="Dat.h" />
-    <ClInclude Include="DataFile.h" />
     <ClInclude Include="GrdDatConv.h" />
     <ClInclude Include="inputLoader.h" />
     <ClInclude Include="inputParser.h" />
