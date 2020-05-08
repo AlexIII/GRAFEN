@@ -13,7 +13,7 @@
     <ClInclude Include="Dat.h" />
     <ClInclude Include="GrdDatConv.h" />
     <ClInclude Include="Grid\Grid.h" />
-    <ClInclude Include="inputLoader.h" />
+    <ClInclude Include="GrafenArgs.h" />
     <ClInclude Include="inputParser.h" />
     <ClInclude Include="mobj.h" />
     <ClInclude Include="MPIpool.h" />
@@ -21,6 +21,7 @@
     <ClInclude Include="Quadrangles.h" />
     <ClInclude Include="sharedMem.h" />
     <ClInclude Include="Stopwatch.h" />
+    <ClInclude Include="TopogravArgs.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="calcField.cu" />
@@ -60,7 +61,7 @@
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>C:\boost_1_72_0;C:\GeographicLib-1.49\include;$(MSMPI_INC);%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <OpenMPSupport>true</OpenMPSupport>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>

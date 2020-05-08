@@ -11,10 +11,12 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
-#include <variant>
+#include <boost/variant.hpp>
+#include <boost/optional.hpp>
 #include "mobj.h"
 #include "calcField.h"
-#include "inputLoader.h"
+#include "GrafenArgs.h"
+#include "TopogravArgs.h"
 #include "Stopwatch.h"
 #include "Quadrangles.h"
 #include "MPIwrapper.h"
@@ -31,9 +33,6 @@ using GeographicLib::TransverseMercator;
 
 #define MIN_DENS 1e-8
 
-
-//#define R_EQ 6367.558487
-//#define R_PL 6367.558487
 
 #define Assert(exp) do { if (!(exp)) throw runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
 
@@ -164,70 +163,56 @@ void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D::Element> psGK,
 
 struct calcFieldNodeBase {
 	Ellipsoid e;
-	calcFieldNodeBase(const Ellipsoid &e) : e(e) {}
-};
-struct GeoModOpts : calcFieldNodeBase {
-	GeoModOpts(const Ellipsoid &e) : calcFieldNodeBase(e) {}
+	boost::optional<Point> n;
+	calcFieldNodeBase(const Ellipsoid &e, boost::optional<Point> n = boost::optional<Point>{}) : e(e), n(n) {}
 };
 struct GeoNormOpts : calcFieldNodeBase {
-	GeoNormOpts(const Ellipsoid &e) : calcFieldNodeBase(e) {}
+	GeoNormOpts(const Ellipsoid &e, boost::optional<Point> n = boost::optional<Point>{}) : calcFieldNodeBase(e, n) {}
 };
 struct GKNormOpts : calcFieldNodeBase { 
 	double l0;
 	GKNormOpts(const Ellipsoid &e, const double l0) : calcFieldNodeBase(e), l0(l0) {}
 };
-using calcFieldNodeOpts = std::variant<GeoModOpts, GeoNormOpts, GKNormOpts>;
+using calcFieldNodeOpts = boost::variant<GeoNormOpts, GKNormOpts>;
 
 //Calculate gravity field on a single node
 //If GKNormOpts: fp - field poinst in GK, field in the normal derection to reference ellipsoid in field point
 //If GeoNormOpts: fp - field poinst in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field in the normal derection to reference ellipsoid in field point
-//If GeoModOpts: fp - field poinst in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field module
 void calcFieldNode(const calcFieldNodeOpts &opts, unique_ptr<gFieldSolver> &solver,
 	const vector<Dat3D::Point> &fp, vector<double> &result) {
 	Assert(fp.size() == result.size());
 
-	auto calcGLNorm = [&](const GKNormOpts& opts) {
-		const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
-		for (size_t i = 0; i < fp.size(); ++i) {
-			const Dat3D::Point &p = fp[i];
-			double l, B;
-			double x = xFromGK(p.x, opts.l0);
-			proj.Reverse(toDeg(opts.l0), x*1000., p.y*1000., B, l);
-			l = toRad(l);
-			B = toRad(B);
-			const Point p0 = opts.e.getPoint(B, l, p.z);
-			const Point n0 = opts.e.getNormal(B, l);
-			result[i] += G_CONST * solver->solve(p0, n0);
+	class CalcFieldVisitor : public boost::static_visitor<void> {
+		unique_ptr<gFieldSolver> &solver;
+		const vector<Dat3D::Point> &fp;
+		vector<double> &result;
+	public:
+		CalcFieldVisitor(unique_ptr<gFieldSolver> &solver, const vector<Dat3D::Point> &fp, vector<double> &result) : solver(solver), fp(fp), result(result) {}
+		void operator()(const GKNormOpts& opts) const {
+			const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
+			for (size_t i = 0; i < fp.size(); ++i) {
+				const Dat3D::Point &p = fp[i];
+				double l, B;
+				double x = xFromGK(p.x, opts.l0);
+				proj.Reverse(toDeg(opts.l0), x*1000., p.y*1000., B, l);
+				l = toRad(l);
+				B = toRad(B);
+				const Point p0 = opts.e.getPoint(B, l, p.z);
+				const Point n0 = opts.n? *opts.n : opts.e.getNormal(B, l);
+				result[i] += G_CONST * solver->solve(p0, n0);
+			}
+		}
+		void operator()(const GeoNormOpts& opts) const {
+			for (size_t i = 0; i < fp.size(); ++i) {
+				const Dat3D::Point &p = fp[i];
+				const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
+				const Point n0 = opts.n ? *opts.n : opts.e.getNormal(toRad(p.y), toRad(p.x));
+				result[i] += G_CONST * solver->solve(p0, n0);
+			}
 		}
 	};
 
-	auto calcGeoNorm = [&](const GeoNormOpts& opts) {
-		for (size_t i = 0; i < fp.size(); ++i) {
-			const Dat3D::Point &p = fp[i];
-			const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
-			const Point n0 = opts.e.getNormal(toRad(p.y), toRad(p.x));
-			result[i] += G_CONST * solver->solve(p0, n0);
-		}
-	};
-
-	//not finished
-	auto calcGeoMod = [&](const GeoModOpts& opts) {
-		for (size_t i = 0; i < fp.size(); ++i) {
-			const Dat3D::Point &p = fp[i];
-			const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
-			//result[i] += G_CONST * solver->solve(p0);
-		}
-	};
-
-	std::visit([&](auto&& opts) {
-		using T = std::decay_t<decltype(opts)>;
-		if constexpr (std::is_same_v<T, GeoModOpts>)
-			calcGeoMod(opts);
-		else if constexpr (std::is_same_v<T, GeoNormOpts>)
-			calcGeoNorm(opts);
-		else if constexpr (std::is_same_v<T, GKNormOpts>)
-			calcGLNorm(opts);
-	}, opts);
+	boost::apply_visitor(CalcFieldVisitor(solver, fp, result), opts);
 }
 
 class ClusterSolver : public MPI {
@@ -351,7 +336,7 @@ int grafenMain(int argc, char *argv[]) {
 
 		//gElements qs;
 		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
-		Input inp(argc, argv);
+		GrafenArgs inp(argc, argv);
 
 		const size_t qAm = getHexAm(inp.Nlim.n, inp.Elim.n, inp.Hlim.n);
 		cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";
@@ -430,6 +415,7 @@ int grafenMain(int argc, char *argv[]) {
 	return 0;
 }
 
+/*
 template <class VAlloc>
 void saveAsDat(const vector<HexahedronWid, VAlloc> &hsi) {
 	Dat3D dat;
@@ -438,6 +424,7 @@ void saveAsDat(const vector<HexahedronWid, VAlloc> &hsi) {
 			dat.es.push_back({ { hsi[i].p[pi].x, hsi[i].p[pi].y, hsi[i].p[pi].z}, hsi[i].dens });
 	dat.write("shape.dat");
 }
+*/
 
 int topogravMain(int argc, char *argv[]) {
 
@@ -453,7 +440,7 @@ int topogravMain(int argc, char *argv[]) {
 	try {
 		ClusterSolver cs;
 		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
-		InputTopoGravFiled inp(argc, argv);
+		TopogravArgs inp(argc, argv);
 		const Grid topoGrid(inp.topoGridFname);
 		const size_t qAm = (topoGrid.nCol - 1) * (topoGrid.nRow - 1);
 		cout << "Elements: " << qAm << endl;
@@ -475,9 +462,9 @@ int topogravMain(int argc, char *argv[]) {
 		fieldDat.forEach([&](auto &el) { el.p.z += 0.00001; }); //elivate computation point above the mass volume a little
 		sectionStopwatch("Computing", [&]() {
 			//set approximate size of buffer
-			cs.triBufferSize = inp.pprr < 1e-6? 0 : qss.size() / 4;
+			cs.triBufferSize = inp.pprr < 1e-6? 0 : int(qss.size() / 4);
 			//do the job
-			cs.calcField(GeoNormOpts{ inp.refEllipsoid }, qss, fieldDat, inp.pprr);
+			cs.calcField(GeoNormOpts{ inp.refEllipsoid, inp.normal }, qss, fieldDat, inp.pprr);
 		});
 
 		//save result

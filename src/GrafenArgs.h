@@ -1,12 +1,5 @@
-/*
- * inputLoader.h
- *
- *  Created on: 19 марта 2016 г.
- *      Author: alex
- */
-
-#ifndef INPUTLOADER_H_
-#define INPUTLOADER_H_
+#ifndef GRAFENARGS_H_
+#define GRAFENARGS_H_
 
 #include <iostream>
 #include <sstream>
@@ -25,44 +18,7 @@ using std::cout;
 using std::endl;
 using std::istringstream;
 
-#define DEF_R_EQ 6378.245		//equatorial radius in km
-#define DEF_R_PL 6356.863		//polar radius in km
-
-class InputTopoGravFiled {
-public:
-	//input options
-	string topoGridFname; // -topoGrd7 *string*
-	string gravGridFname; // -gravGrd7 *string*
-	double dens; // -dens *number*
-	Ellipsoid refEllipsoid{DEF_R_EQ, DEF_R_PL}; // -Rpol *number* -Req *number*
-	//point-potential replacement radius
-	double pprr = -1; // -DPR *number*
-
-	InputTopoGravFiled(int argc, char *argv[]) {
-		InputParser ip(argc, argv);
-		ip["topoGrd7"] >> topoGridFname;
-		ip["gravGrd7"] >> gravGridFname;
-		ip["dens"] >> dens;
-
-		if(ip.exists("Req") && ip.exists("Rpol")) {
-			double Req, Rpol;
-			ip["Req"] >> Req;
-			ip["Rpol"] >> Rpol;
-			refEllipsoid = Ellipsoid(Req, Rpol);
-		} else {
-			cout << "Using default reference ellipsoid with Rpol=" << refEllipsoid.Rpl << " and Req=" << refEllipsoid.Req << endl;
-		}
-
-		if (ip.exists("DPR"))
-			ip["DPR"] >> pprr;
-		else {
-			//dotPotentialRad = AutoReplRadi::get(1e-3, Elim.dWh(), Nlim.dWh(), Hlim.d());
-			//cout << "Deduced dot potential replace radius: " << dotPotentialRad << endl;
-		}
-	}
-};
-
-class Input {
+class GrafenArgs {
 public:
 	limits Elim;
 	limits Nlim;
@@ -89,7 +45,7 @@ public:
 		// [-noInvFileOrder]
 		// [-transposeSolver]
 		// [-saveDatAs3D]
-	Input(int argc, char *argv[]) {
+	GrafenArgs(int argc, char *argv[]) {
 		InputParser ip(argc, argv);
 
 		noInvFileOrder = ip.exists("noInvFileOrder");
@@ -234,4 +190,4 @@ private:
 	}
 };
 
-#endif /* INPUTLOADER_H_ */
+#endif 

@@ -21,7 +21,6 @@
     <ClInclude Include="cuVar.h" />
     <ClInclude Include="Dat.h" />
     <ClInclude Include="GrdDatConv.h" />
-    <ClInclude Include="inputLoader.h" />
     <ClInclude Include="inputParser.h" />
     <ClInclude Include="mobj.h" />
     <ClInclude Include="MPIpool.h" />
@@ -29,6 +28,8 @@
     <ClInclude Include="Quadrangles.h" />
     <ClInclude Include="sharedMem.h" />
     <ClInclude Include="Stopwatch.h" />
+    <ClInclude Include="GrafenArgs.h" />
+    <ClInclude Include="TopogravArgs.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="calcField.cu" />
