@@ -76,7 +76,7 @@ void makeHexsTopo(const Ellipsoid &e, const Grid &topo, const double dens, vecto
 #pragma omp parallel for
 	for(int yi = 0; yi < yN; ++yi)
 		for (int xi = 0; xi < xN; ++xi) {
-			Hexahedron h({
+			const Hexahedron h({
 				//above
 				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi + 1)), topo.at(xi + 1, yi + 1)),	//top right
 				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi + 1)), topo.at(xi + 1, yi)), //bottom right
@@ -441,7 +441,9 @@ int topogravMain(int argc, char *argv[]) {
 		ClusterSolver cs;
 		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
 		TopogravArgs inp(argc, argv);
-		const Grid topoGrid(inp.topoGridFname);
+		Grid topoGrid(inp.topoGridFname);
+		topoGrid.setBlanksTo(topoGrid.mean());
+
 		const size_t qAm = (topoGrid.nCol - 1) * (topoGrid.nRow - 1);
 		cout << "Elements: " << qAm << endl;
 		cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";

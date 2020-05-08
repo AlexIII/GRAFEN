@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <functional>
 using namespace std;
 
 #include <math.h>
@@ -45,7 +46,10 @@ public:
 	double getMin();
 	double getMax();
 
-	double at(const int col, const int row) const {
+	const double& at(const int col, const int row) const {
+		return data[row*nCol + col];
+	}
+	double& at(const int col, const int row) {
 		return data[row*nCol + col];
 	}
 	double xAt(const int col) const {
@@ -53,6 +57,37 @@ public:
 	}
 	double yAt(const int row) const {
 		return yLL + row * ySize;
+	}
+	double width() const {
+		return (nCol - 1) * xSize;
+	}
+	double height() const {
+		return (nRow - 1) * ySize;
+	}
+	double mean() const {
+		int count = 0;
+		double mean = 0;
+		forEach([&BlankValue = BlankValue, &count, &mean](int, int, const double &v) {
+			if (v == BlankValue) return;
+			mean += v;
+			++count;
+		});
+		return count? mean / count : 0;
+	}
+	void forEach(const function<void(int, int, double&)>& f) {
+		for (int i = 0; i < nCol; ++i)
+			for (int j = 0; j < nRow; ++j)
+				f(i, j, at(i, j));
+	}
+	void forEach(const function<void(int, int, const double&)>& f) const {
+		for (int i = 0; i < nCol; ++i)
+			for (int j = 0; j < nRow; ++j)
+				f(i, j, at(i, j));
+	}
+	void setBlanksTo(const double bv) {
+		forEach([&BlankValue = BlankValue, &bv](int, int, double& val) {
+			if (val == BlankValue) val = bv;
+		});
 	}
 
 	Grid& upScale(const int xFactor, const int yFactor) {
