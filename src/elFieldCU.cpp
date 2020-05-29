@@ -67,7 +67,50 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 	return min(v1, v2);
 }
 
+//{B in deg, l in deg, z} -> {E, N, z} in km
+Point GeoToGK(const TransverseMercator &proj, const double l0, const double B, const double l, const double z) {
+	Point p{0, 0, z};
+	proj.Forward(l0, B, l, p.x, p.y);
+	p.x /= 1000.;
+	p.y /= 1000.;
+	p.x = xToGK(p.x, l0);
+	return p;
+}
+
+//construct flat density model in GK from topography model (mesh nodes in degrees)
+//topo mesh in deg, height in km
+template <class VAlloc>
+void makeHexsTopoFlat(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
+	hsi.resize(xN * yN);
+
+	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	auto GeoToGK3 = [&](const double B, const double l, const double z) -> Point { 
+		return GeoToGK(proj, l0, B, l, z);
+	};
+
+#pragma omp parallel for
+	for (int yi = 0; yi < yN; ++yi)
+		for (int xi = 0; xi < xN; ++xi) {
+			const Hexahedron h({
+				//above
+				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi + 1), topo.at(xi + 1, yi + 1)),	//top right
+				GeoToGK3(topo.yAt(yi), topo.xAt(xi + 1), topo.at(xi + 1, yi)), //bottom right
+				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi), topo.at(xi, yi + 1)), //top left
+				GeoToGK3(topo.yAt(yi), topo.xAt(xi), topo.at(xi, yi)), //bottom left
+				//below
+				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi + 1), 0),	//top right
+				GeoToGK3(topo.yAt(yi), topo.xAt(xi + 1), 0), //bottom right
+				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi), 0), //top left
+				GeoToGK3(topo.yAt(yi), topo.xAt(xi), 0), //bottom left
+			}, dens);
+
+			hsi[yi*xN + xi] = HexahedronWid(h);
+		}
+}
+
 //construct density model from topography model (mesh nodes in degrees)
+//topo mesh in deg, height in km
 template <class VAlloc>
 void makeHexsTopo(const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
@@ -171,9 +214,12 @@ struct GeoNormOpts : calcFieldNodeBase {
 };
 struct GKNormOpts : calcFieldNodeBase { 
 	double l0;
-	GKNormOpts(const Ellipsoid &e, const double l0) : calcFieldNodeBase(e), l0(l0) {}
+	GKNormOpts(const Ellipsoid &e, const double l0, boost::optional<Point> n = boost::optional<Point>{}) : calcFieldNodeBase(e, n), l0(l0) {}
 };
-using calcFieldNodeOpts = boost::variant<GeoNormOpts, GKNormOpts>;
+struct GeoNormOptsFlat : GKNormOpts {
+	GeoNormOptsFlat(const Ellipsoid &e, const double l0, boost::optional<Point> n = boost::optional<Point>{}) : GKNormOpts(e, l0, n) {}
+};
+using calcFieldNodeOpts = boost::variant<GeoNormOpts, GKNormOpts, GeoNormOptsFlat>;
 
 //Calculate gravity field on a single node
 //If GKNormOpts: fp - field poinst in GK, field in the normal derection to reference ellipsoid in field point
@@ -207,6 +253,17 @@ void calcFieldNode(const calcFieldNodeOpts &opts, unique_ptr<gFieldSolver> &solv
 				const Dat3D::Point &p = fp[i];
 				const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
 				const Point n0 = opts.n ? *opts.n : opts.e.getNormal(toRad(p.y), toRad(p.x));
+				result[i] += G_CONST * solver->solve(p0, n0);
+			}
+		}
+		void operator()(const GeoNormOptsFlat& opts) const {
+			const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
+			for (size_t i = 0; i < fp.size(); ++i) {
+				const Dat3D::Point &p = fp[i];
+				Point p0 = GeoToGK(proj, opts.l0, p.y, p.x, p.z);
+				p0.x += 0.00001;
+				p0.y += 0.00001;
+				const Point n0 = opts.n ? *opts.n : Point{ 0, 0, 1 }; //in z direction
 				result[i] += G_CONST * solver->solve(p0, n0);
 			}
 		}
@@ -453,11 +510,10 @@ int topogravMain(int argc, char *argv[]) {
 
 		//preprocessing
 		if(cs.isLocalRoot()) 
-			sectionStopwatch("Preprocessing", [&](){ makeHexsTopo(inp.refEllipsoid, topoGrid, inp.dens, qss); });
+			sectionStopwatch("Preprocessing", [&](){ makeHexsTopoFlat(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss); });
 		cs.Barrier();
 		const size_t qSize = qss.size();
 		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
-		//if(cs.isRoot()) saveAsDat(qss);
 		
 		//computation
 		Dat3D fieldDat = GDconv::toDat3D(topoGrid);
@@ -466,7 +522,7 @@ int topogravMain(int argc, char *argv[]) {
 			//set approximate size of buffer
 			cs.triBufferSize = inp.pprr < 1e-6? 0 : int(qss.size() / 4);
 			//do the job
-			cs.calcField(GeoNormOpts{ inp.refEllipsoid, inp.normal }, qss, fieldDat, inp.pprr);
+			cs.calcField(GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal }, qss, fieldDat, inp.pprr);
 		});
 
 		//save result

@@ -71,8 +71,11 @@ __host__ __device__ double gMassPoint(const Point &p0, const Point &n0, const do
 
 __host__ __device__ double intHexTr(const Point &p0, const Point &n0, const HexahedronWid &h) {
 	double sum = 0;
-	for (int i = 0; i < 12; ++i)
-		sum += intTrAn(p0, h.getTri(i)) * (n0^h.getTriNorm(i));
+	for (int i = 0; i < 12; ++i) {
+		const double v = intTrAn(p0, h.getTri(i)) * (n0^h.getTriNorm(i));
+		//if(!isnan(v))
+			sum += v;
+	}
 	return sum;
 }
 
