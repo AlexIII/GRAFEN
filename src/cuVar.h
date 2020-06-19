@@ -17,7 +17,7 @@ public:
 		return get();
 	}
 	cuVar<T>& operator=(const cuVar<T> &v) {
-		cudaMemcpy(p, &v, sizeof T, cudaMemcpyDeviceToDevice);
+		cudaMemcpy(p, &v, sizeof(T), cudaMemcpyDeviceToDevice);
 		return *this;
 	}
 	cuVar<T>& operator=(const T &v) {
@@ -31,6 +31,6 @@ public:
 	}
 private:
 	void* p;
-	void set(const T &v) const { cudaMemcpy(p, &v, sizeof T, cudaMemcpyHostToDevice); }
-	void get(T &v) const { cudaMemcpy(&v, p, sizeof T, cudaMemcpyDeviceToHost); }
+	void set(const T &v) const { cudaMemcpy(p, &v, sizeof(T), cudaMemcpyHostToDevice); }
+	void get(T &v) const { cudaMemcpy(&v, p, sizeof(T), cudaMemcpyDeviceToHost); }
 };

@@ -57,14 +57,14 @@ public:
 		ip["Hn"] >> Hlim.n;
 
 		if(ip.exists("dens")) {
-			string dirName;
+			std::string dirName;
 			ip["dens"] >> dirName;
 			LoadDens(dirName);
 			Grid g(fnames[0]);
 			Elim = {g.xLL, g.xLL + (g.nCol-1)*g.xSize, g.nCol};
 			Nlim = {g.yLL, g.yLL + (g.nRow-1)*g.ySize, g.nRow};
 			if(fnames.size() < Hlim.n)
-				throw runtime_error("Not enough density files have been found");
+				throw std::runtime_error("Not enough density files have been found");
 			if(ip.exists("toRel")) relDens(dens);
 		} else {
 			ip["Efrom"] >> Elim.lower;
@@ -79,22 +79,22 @@ public:
 		l0 = toRad(l0);
 
 		if(ip.exists("densLayers")) {
-			string fname;
+			std::string fname;
 			ip["densLayers"] >> fname;
 			Dat2D d(fname);
 			dens.clear();
-			d.forEach([&](Dat2D::Element &el){ dens.push_back(vector<double>(Elim.n*Nlim.n, el.p.y)); });
+			d.forEach([&](Dat2D::Element &el){ dens.push_back(std::vector<double>(Elim.n*Nlim.n, el.p.y)); });
 		}
 
 		if(ip.exists("densVal")) {
 			double tmp;
 			ip["densVal"] >> tmp;
-			vector<double> l(Elim.n*Nlim.n, tmp);
-			dens = vector<vector<double>>(Hlim.n, l);
+			std::vector<double> l(Elim.n*Nlim.n, tmp);
+			dens = std::vector<std::vector<double>>(Hlim.n, l);
 			cout << "All densities are set to " << tmp << endl;
 		}
 
-		string datFname;
+		std::string datFname;
 		if (ip.exists("dat")) {
 			dat2D = true;
 			ip["dat"] >> datFname;
@@ -109,7 +109,7 @@ public:
 			grdFile = true;
 			ip["grd7"] >> grdFname;
 			datFname = grdFname;
-		} else throw runtime_error("No *.dat or *.grd file has been specified for the Field.");
+		} else throw std::runtime_error("No *.dat or *.grd file has been specified for the Field.");
 
 		double Hf = 0;
 		if(grdFile) {
@@ -143,7 +143,7 @@ public:
 
 	void LoadDens(const std::string dirName) {
 		getDensFiles(dirName);
-		if(!fnames.size()) throw runtime_error("No density files have been found");
+		if(!fnames.size()) throw std::runtime_error("No density files have been found");
 		cout << fnames.size() << " density files have been found" << endl;
 		if(!noInvFileOrder) std::sort(fnames.begin(), fnames.end(), std::less<>());
 		else std::sort(fnames.begin(), fnames.end(), std::greater<>());
@@ -167,7 +167,7 @@ private:
 
 	static std::vector<std::string> getFileNamesInFolder(const std::string dirName) {
 		std::vector<std::string> files;
-		for (auto& p : std::experimental::filesystem::directory_iterator(dirName))
+		for (auto& p : std::filesystem::directory_iterator(dirName))
 			files.push_back(p.path().filename().generic_string());
 		return files;
 	}
@@ -178,7 +178,7 @@ private:
 		exit(1);
 	}
 
-	void relDens(vector<vector<double>> &dens) {
+	void relDens(std::vector<std::vector<double>> &dens) {
 		for(auto &v : dens) {
 			double med = 0;
 			for(auto &d : v)

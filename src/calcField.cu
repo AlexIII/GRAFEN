@@ -8,6 +8,9 @@
 #include "cuVar.h"
 #include <mutex>
 
+using std::cout;
+using std::endl;
+
 #define BLOCK_SZ 32
 #define MAX_DEV 16
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
@@ -116,7 +119,7 @@ public:
 
 	void solve(const HexahedronWid * const qbegin, const HexahedronWid * const qend, const std::vector<double>::iterator &resBegin) override {
 		const size_t taskSz = qend - qbegin;
-		vector<MassPoint> qtmp(taskSz);
+		std::vector<MassPoint> qtmp(taskSz);
 		transform(qbegin, qend, qtmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		std::mutex resMt;
 
@@ -179,7 +182,7 @@ public:
 		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
 		qsCUDA.assign(qbegin, qend);
 		qsCUDAprec.resize(tirBufSz);
-		vector<MassPoint> tmp(qend - qbegin);
+		std::vector<MassPoint> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 		if (dotPotentialRad < -1e-6) cout << "Precise computing" << endl;

@@ -21,7 +21,11 @@
 using std::abs;
 using std::sqrt;
 
-#ifdef __CUDACC__
+#if defined(__HIPCC__)
+#include <hip/hip_runtime.h>
+#endif
+
+#if defined(__CUDACC__) || defined(__HIPCC__)
 #define CUDA_HOST_DEV_FUN __host__ __device__
 #else
 #define CUDA_HOST_DEV_FUN
@@ -39,6 +43,8 @@ struct limits {
 	double lower;
 	double upper;
 	int n;
+	limits() {}
+	limits(const double lower, const double upper, const int n) : lower(lower), upper(upper), n(n) {}
 	double d() const { return (upper - lower) / (double)n; }
 	double at(const int i) const { return lower + d()*i; }
 	double atWh(const int i) const { return n>1 ? lower + dWh()*i : (upper + lower) / 2; }
@@ -367,7 +373,7 @@ public:
 			e(sqrt(Req*Req - Rpl*Rpl)/Req), e_(sqrt(Req*Req - Rpl*Rpl)/Rpl), n((Req-Rpl)/(Req+Rpl)),
 			f((Req-Rpl)/Req) {}
 
-	Point getPoint(pair<double, double> lb, const double H = 0) const { //lambda, B
+	Point getPoint(std::pair<double, double> lb, const double H = 0) const { //lambda, B
 		return getPoint(Req, Rpl, lb.second, lb.first, H);
 	}
 

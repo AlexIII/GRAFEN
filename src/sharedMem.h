@@ -26,9 +26,9 @@ class SharedMemMaster : public SharedMemBase<VT> {
 
 public:
 	SharedMemMaster(const size_t sz) :
-		segment(create_only, "hexElSharedMemory", sz * sizeof VT::value_type + 0x10000),
+		segment(create_only, "hexElSharedMemory", sz * sizeof(typename VT::value_type) + 0x10000),
 		alloc_inst(segment.get_segment_manager()) {
-		data = segment.construct<VT>("hexElVector")(alloc_inst);
+		SharedMemBase<VT>::data = segment.construct<VT>("hexElVector")(alloc_inst);
 	}
 
 	~SharedMemMaster() {
@@ -42,7 +42,7 @@ class SharedMemSlave : public SharedMemBase<VT> {
 public:
 	SharedMemSlave() :
 		segment(open_only, "hexElSharedMemory") {
-		data = segment.find<VT>("hexElVector").first;
+		SharedMemBase<VT>::data = segment.find<VT>("hexElVector").first;
 		cout << "SLAVE SHARED MEMORY CREATED!" << endl;
 	}
 };
