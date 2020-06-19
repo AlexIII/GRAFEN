@@ -5,7 +5,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
-using namespace std;
+#include <functional>
 
 #include <math.h>
 
@@ -14,15 +14,15 @@ using namespace std;
 class Grid
 {
 private:
-	__int32 ReadInt32(ifstream* fs);
-	double ReadDouble(ifstream* fs);
-	void WriteInt32(ofstream* fs, __int32 value);
-	void WriteDouble(ofstream* fs, double value);
+	__int32 ReadInt32(std::ifstream* fs);
+	double ReadDouble(std::ifstream* fs);
+	void WriteInt32(std::ofstream* fs, __int32 value);
+	void WriteDouble(std::ofstream* fs, double value);
 
 	bool Init();
 
 public:
-		vector<double> data;
+		std::vector<double> data;
 		int nRow;
 		int nCol;
 		double xLL;
@@ -33,11 +33,11 @@ public:
 		double zMax;
 		double Rotation;
 		double BlankValue;
-	string fname;
+	std::string fname;
 
 public:
 	Grid();
-	Grid(const string &fileName);
+	Grid(const std::string &fileName);
 
 	static Grid GenerateEmptyGrid(Grid& grid);
 
@@ -45,13 +45,57 @@ public:
 	double getMin();
 	double getMax();
 
+	const double& at(const int col, const int row) const {
+		return data[row*nCol + col];
+	}
+	double& at(const int col, const int row) {
+		return data[row*nCol + col];
+	}
+	double xAt(const int col) const {
+		return xLL + col * xSize;
+	}
+	double yAt(const int row) const {
+		return yLL + row * ySize;
+	}
+	double width() const {
+		return (nCol - 1) * xSize;
+	}
+	double height() const {
+		return (nRow - 1) * ySize;
+	}
+	double mean() const {
+		int count = 0;
+		double mean = 0;
+		forEach([&BlankValue = BlankValue, &count, &mean](int, int, const double &v) {
+			if (v == BlankValue) return;
+			mean += v;
+			++count;
+		});
+		return count? mean / count : 0;
+	}
+	void forEach(const std::function<void(int, int, double&)>& f) {
+		for (int i = 0; i < nCol; ++i)
+			for (int j = 0; j < nRow; ++j)
+				f(i, j, at(i, j));
+	}
+	void forEach(const std::function<void(int, int, const double&)>& f) const {
+		for (int i = 0; i < nCol; ++i)
+			for (int j = 0; j < nRow; ++j)
+				f(i, j, at(i, j));
+	}
+	void setBlanksTo(const double bv) {
+		forEach([&BlankValue = BlankValue, &bv](int, int, double& val) {
+			if (val == BlankValue) val = bv;
+		});
+	}
+
 	Grid& upScale(const int xFactor, const int yFactor) {
 		upScaleX(xFactor);
 		upScaleY(yFactor);
 		return *this;
 	}
 	void upScaleX(const int factor) {
-		vector<double> newData(nRow*nCol*factor);
+		std::vector<double> newData(nRow*nCol*factor);
 		for (int i = 0; i < nRow*nCol; ++i)
 			for (int k = 0; k < factor; ++k)
 				newData[i*factor+k] = data[i];
@@ -60,7 +104,7 @@ public:
 		xSize /= double(factor);
 	}
 	void upScaleY(const int factor) {
-		vector<double> newData(nRow*nCol*factor);
+		std::vector<double> newData(nRow*nCol*factor);
 		for (int i = 0; i < nRow; ++i)
 			for (int j = 0; j < nCol; ++j)
 				for (int k = 0; k < factor; ++k)
@@ -70,9 +114,9 @@ public:
 		ySize /= double(factor);
 	}
 
-	bool Read(const string &fileName);
+	bool Read(const std::string &fileName);
 	bool Read();
-	bool Write(const string &fileName);
+	bool Write(const std::string &fileName);
 	bool Write();
 };
 

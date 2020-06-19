@@ -27,7 +27,7 @@ public:
 		}
 		size_t sz;
 		file.read((char*)&sz, sizeof(size_t));
-		resize(sz);
+		std::vector<T, _Alloc>::resize(sz);
 		file.read((char*)std::vector<T>::data(), sz * sizeof(base));
 		file.close();
 	}

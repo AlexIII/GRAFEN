@@ -60,19 +60,19 @@ public:
 	std::string fileName;
 
 	template<typename T = const Dat<DatPoint2D>>
-	Dat(enable_if_t<is_same_v<PointType, DatPoint3D>, T> dat2D, const double z) {
+	Dat(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, T> dat2D, const double z) {
 		set(dat2D, z);
 	}
 
 	template<typename T = const Dat<DatPoint2D>>
-	void set(enable_if_t<is_same_v<PointType, DatPoint3D>, T> dat2D, const double z) {
+	void set(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, T> dat2D, const double z) {
 		es.resize(dat2D.es.size());
 		transform(dat2D.es.begin(), dat2D.es.end(), es.begin(), [&z](const auto &e) {return Element{ Point{e.p.x, e.p.y, z}, e.val }; });
 		fileName = dat2D.fileName;
 	}
 
-	vector<Point> getPoints() const {
-		vector<Point> ps(es.size());
+	std::vector<Point> getPoints() const {
+		std::vector<Point> ps(es.size());
 		std::transform(es.begin(), es.end(), ps.begin(), [](const Element &e) {return e.p; });
 		return ps;
 	}
@@ -82,12 +82,12 @@ public:
 			e.val = val;
 	}
 
-	void set(const vector<double> val) {
+	void set(const std::vector<double> val) {
 		for (size_t i = 0; i < es.size(); ++i)
 			es[i].val = val[i];
 	}
 
-	void add(const vector<double> val) {
+	void add(const std::vector<double> val) {
 		for (size_t i = 0; i < es.size(); ++i)
 			es[i].val += val[i];
 	}
@@ -161,7 +161,7 @@ public:
 			outDatFile << es[i].p << " " << es[i].val << "\n";
 		else for (size_t i = 0; i < es.size(); ++i)
 			outDatFile << ((DatPoint2D&)es[i].p) << " " << es[i].val << "\n";
-		outDatFile << flush;
+		outDatFile << std::flush;
 		outDatFile.close();
 	}
 
@@ -176,44 +176,10 @@ public:
 		return es.size();
 	}
 
-	void map(std::function<void (Element &)> fun) {
+	void forEach(std::function<void (Element &)> fun) {
 		for(size_t i = 0; i < es.size(); ++i)
 			fun(es[i]);
 	}
-
-	/*
-	void mapPB(std::function<void (Element &)> fun) {
-		const size_t max = es.size();
-		size_t cur = 0;
-		std::cout << "  0.00%" << std::flush;
-		for(size_t i = 0; i < es.size(); ++i) {
-			fun(es[i]);
-			++cur;
-			printf("\r%3u.%02u%%", (unsigned)(cur*100UL/max), (unsigned)((cur*10000UL/max)%100));
-			std::cout << std::flush;
-		}
-		std::cout << "\r 100.00%  " << std::endl;
-	}	
-
-	void mapPB(std::function<void(Element &)> fun) {
-		Stopwatch tmr;
-		tmr.start();
-		const size_t max = es.size();
-		size_t cur = 0;
-		std::cout << "0%" << std::endl;
-		unsigned pr = 0;
-		for (size_t i = 0; i < es.size(); ++i) {
-			fun(es[i]);
-			++cur;
-			const unsigned p = cur * 100UL / max;
-			if (pr != p) {
-				std::cout << p << "% : " << tmr.stop() << std::endl;
-				pr = p;
-			}
-		}
-		std::cout << "100%" << std::endl;
-	}
-	*/
 };
 
 using Dat2D = Dat<DatPoint2D>;

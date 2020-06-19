@@ -5,15 +5,16 @@
 #include <sstream>
 #include <vector>
 #include <string>
-using namespace std;
+#include <cstring>
+#include <climits>
 
 #define HOSTNAME_BUFF_SZ 50
-class MPI {
+class MPIwrapper {
 public:
 	int myId;
 	int gridSize;
 	const int root = 0;
-	string host;
+	std::string host;
 
 	struct nodeInfo {
 		int id;
@@ -21,24 +22,25 @@ public:
 	};
 	nodeInfo me;
 
-	MPI(MPI_Comm comm = MPI_COMM_WORLD) : comm(comm) {
+	MPIwrapper(MPI_Comm comm = MPI_COMM_WORLD) : comm(comm) {
 		int pr;
 		MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &pr);
-		if (pr != MPI_THREAD_MULTIPLE) throw runtime_error("Multithread MPI request failed.");
+		if (pr != MPI_THREAD_MULTIPLE) throw std::runtime_error("Multithread MPI request failed.");
 		MPI_Comm_size(comm, &gridSize);
 		MPI_Comm_rank(comm, &myId);
 
 		//get host name
-		char hostname[50];
+		char hostname[200];
 		int len;
 		MPI_Get_processor_name(hostname, &len);
-		host = string(hostname);
+		host = std::string(hostname);
 
 		me.id = myId;
 		strncpy(me.hostname, hostname, HOSTNAME_BUFF_SZ-1);
+		me.hostname[HOSTNAME_BUFF_SZ-1] = '\0';
 	}
 
-	virtual ~MPI() {
+	virtual ~MPIwrapper() {
 		MPI_Finalize();
 	}
 
@@ -62,11 +64,11 @@ public:
 		std::string error;
 	};
 
-	tuple<int, bool> localId() {
+	std::tuple<int, bool> localId() {
 		static int localId = 0;
 		static bool rootMachine = false;
 		static bool done = false;
-		if(done) return make_tuple(localId, rootMachine);
+		if(done) return std::make_tuple(localId, rootMachine);
 		done = true;
 
 		char rootHostname[HOSTNAME_BUFF_SZ];
@@ -74,12 +76,12 @@ public:
 		Bcast(rootHostname);
 		rootMachine = strcmp(rootHostname, me.hostname) == 0;
 
-		vector<nodeInfo> nodes;
+		std::vector<nodeInfo> nodes;
 		Allgather(me, nodes);
-		vector<nodeInfo> locals;
-		copy_if(nodes.begin(), nodes.end(), back_inserter(locals), [&](const nodeInfo &n) {return strcmp(n.hostname, me.hostname) == 0; });
-		localId = find_if(locals.begin(), locals.end(), [&](const nodeInfo &n) {return n.id == me.id; }) - locals.begin();
-		return make_tuple(localId, rootMachine);
+		std::vector<nodeInfo> locals;
+		std::copy_if(nodes.begin(), nodes.end(), back_inserter(locals), [&](const nodeInfo &n) {return strcmp(n.hostname, me.hostname) == 0; });
+		localId = std::find_if(locals.begin(), locals.end(), [&](const nodeInfo &n) {return n.id == me.id; }) - locals.begin();
+		return std::make_tuple(localId, rootMachine);
 	}
 
 	char *hostname() {
@@ -119,7 +121,7 @@ public:
 		part.resize(sz[myId]);
 		std::vector<int> sizes(sz, sz + gridSize);
 		for (auto &s : sizes) s *= sizeof(T);
-		vector<int> displacement(sizes.size());
+		std::vector<int> displacement(sizes.size());
 		for (size_t i = 0; i < sizes.size() - 1; ++i)
 			displacement[i + 1] = displacement[i] + sizes[i];
 		error(MPI_Scatterv(src.data(), sizes.data(), displacement.data(), MPI_UINT8_T, part.data(), sizes[myId], MPI_UINT8_T, root, comm));
@@ -127,10 +129,10 @@ public:
 
 	template <typename T>
 	void Gather(std::vector<T> &v, std::vector<T> &res) {
-		vector<int> sizes;
+		std::vector<int> sizes;
 		Allgather(int(v.size()), sizes);
 		for (auto &s : sizes) s *= sizeof(T);
-		vector<int> displacement(sizes.size());
+		std::vector<int> displacement(sizes.size());
 		for (size_t i = 0; i < sizes.size() - 1; ++i)
 			displacement[i + 1] = displacement[i] + sizes[i];
 		const size_t totalSize = (*displacement.crbegin() + *sizes.crbegin()) / sizeof(T);
@@ -153,13 +155,13 @@ public:
 	void recv(T* v, const size_t sz, const int srcId) {
 		size_t rsz;
 		recv(rsz, srcId);
-		if (rsz != sz) throw runtime_error("MPI::recv(T* v, const size_t sz, const int srcId) - size of v differ");
+		if (rsz != sz) throw std::runtime_error("MPI::recv(T* v, const size_t sz, const int srcId) - size of v differ");
 		if (!sz) return;
 		error(MPI_Recv(v, sz*sizeof(T), MPI_UINT8_T, srcId, 0, comm, MPI_STATUS_IGNORE));
 	}
 	
 	template <typename T>
-	void send(const vector<T>& v, const int destId) {
+	void send(const std::vector<T>& v, const int destId) {
 		const size_t sz = v.size();
 		send(sz, destId);
 		if (!sz) return;

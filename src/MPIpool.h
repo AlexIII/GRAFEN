@@ -5,33 +5,33 @@
 template<typename TaskType, typename ResType>
 class MPIpool {
 public:
-	MPIpool(MPI &mpi, const vector<TaskType>& task, vector<ResType> &result, const size_t chunkSize) : mpi(mpi) {
-		if (mpi.gridSize < 2) throw runtime_error("You must run at least 2 MPI tasks.");
+	MPIpool(MPIwrapper &mpi, const std::vector<TaskType>& task, std::vector<ResType> &result, const size_t chunkSize) : mpi(mpi) {
+		if (mpi.gridSize < 2) throw std::runtime_error("You must run at least 2 MPI tasks.");
 		if (!mpi.isRoot()) return;
 		result.resize(task.size());
 		poolMaster(mpi, task, result, chunkSize);
 	}
 
-	vector<TaskType> getTask() {
-		vector<TaskType> tmp;
+	std::vector<TaskType> getTask() {
+		std::vector<TaskType> tmp;
 		mpi.recv(tmp, mpi.root);
 		return tmp;
 	}
-	void submit(const vector<ResType>& res) {
+	void submit(const std::vector<ResType>& res) {
 		mpi.send(res, mpi.root);
 	}
 
 private:
-	MPI &mpi;
+	MPIwrapper &mpi;
 
-	static void poolMaster(MPI &mpi, const vector<TaskType>& task, vector<ResType>& result, const size_t chunkSize) {
+	static void poolMaster(MPIwrapper &mpi, const std::vector<TaskType>& task, std::vector<ResType>& result, const size_t chunkSize) {
 		size_t curIt = 0;
 		std::mutex m;
 		Stopwatch tmr;
-		auto nextRange = [&]() -> pair<size_t, size_t> {
+		auto nextRange = [&]() -> std::pair<size_t, size_t> {
 			m.lock();
 			const size_t from = curIt;
-			const size_t to = (curIt += min(chunkSize, task.size() - curIt));
+			const size_t to = (curIt += std::min(chunkSize, task.size() - curIt));
 			m.unlock();
 			
 			const size_t tn = from / chunkSize;
@@ -52,7 +52,7 @@ private:
 			}
 		};
 
-		vector<std::thread> workers(mpi.gridSize - 1);
+		std::vector<std::thread> workers(mpi.gridSize - 1);
 		for (int i = 0; i < workers.size(); ++i)
 			workers[i] = std::thread(ker, i + 1);
 		for (int i = 0; i < workers.size(); ++i)
