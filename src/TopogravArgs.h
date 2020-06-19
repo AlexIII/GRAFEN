@@ -18,8 +18,8 @@ using std::istringstream;
 class TopogravArgs {
 public:
 	//input options
-	string topoGridFname; // -topoGrd7 *string*
-	string gravGridFname; // -gravGrd7 *string*
+	std::string topoGridFname; // -topoGrd7 *string*
+	std::string gravGridFname; // -gravGrd7 *string*
 	double dens; // -dens *number*
 	Ellipsoid refEllipsoid{ DEF_R_EQ, DEF_R_PL }; // -Rpol *number* -Req *number*
 	double pprr = -1;	// -DPR *number*

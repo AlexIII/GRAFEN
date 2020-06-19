@@ -7,7 +7,7 @@
 #include <string>
 
 #define HOSTNAME_BUFF_SZ 50
-class MPI {
+class MPIwrapper {
 public:
 	int myId;
 	int gridSize;
@@ -20,7 +20,7 @@ public:
 	};
 	nodeInfo me;
 
-	MPI(MPI_Comm comm = MPI_COMM_WORLD) : comm(comm) {
+	MPIwrapper(MPI_Comm comm = MPI_COMM_WORLD) : comm(comm) {
 		int pr;
 		MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &pr);
 		if (pr != MPI_THREAD_MULTIPLE) throw std::runtime_error("Multithread MPI request failed.");
@@ -37,7 +37,7 @@ public:
 		strncpy(me.hostname, hostname, HOSTNAME_BUFF_SZ-1);
 	}
 
-	virtual ~MPI() {
+	virtual ~MPIwrapper() {
 		MPI_Finalize();
 	}
 
@@ -65,7 +65,7 @@ public:
 		static int localId = 0;
 		static bool rootMachine = false;
 		static bool done = false;
-		if(done) return make_tuple(localId, rootMachine);
+		if(done) return std::make_tuple(localId, rootMachine);
 		done = true;
 
 		char rootHostname[HOSTNAME_BUFF_SZ];
@@ -76,9 +76,9 @@ public:
 		std::vector<nodeInfo> nodes;
 		Allgather(me, nodes);
 		std::vector<nodeInfo> locals;
-		copy_if(nodes.begin(), nodes.end(), back_inserter(locals), [&](const nodeInfo &n) {return strcmp(n.hostname, me.hostname) == 0; });
-		localId = find_if(locals.begin(), locals.end(), [&](const nodeInfo &n) {return n.id == me.id; }) - locals.begin();
-		return make_tuple(localId, rootMachine);
+		std::copy_if(nodes.begin(), nodes.end(), back_inserter(locals), [&](const nodeInfo &n) {return strcmp(n.hostname, me.hostname) == 0; });
+		localId = std::find_if(locals.begin(), locals.end(), [&](const nodeInfo &n) {return n.id == me.id; }) - locals.begin();
+		return std::make_tuple(localId, rootMachine);
 	}
 
 	char *hostname() {

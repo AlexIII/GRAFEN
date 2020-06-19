@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 #include <functional>
-using namespace std;
 
 #include <math.h>
 
@@ -15,15 +14,15 @@ using namespace std;
 class Grid
 {
 private:
-	__int32 ReadInt32(ifstream* fs);
-	double ReadDouble(ifstream* fs);
-	void WriteInt32(ofstream* fs, __int32 value);
-	void WriteDouble(ofstream* fs, double value);
+	__int32 ReadInt32(std::ifstream* fs);
+	double ReadDouble(std::ifstream* fs);
+	void WriteInt32(std::ofstream* fs, __int32 value);
+	void WriteDouble(std::ofstream* fs, double value);
 
 	bool Init();
 
 public:
-		vector<double> data;
+		std::vector<double> data;
 		int nRow;
 		int nCol;
 		double xLL;
@@ -34,11 +33,11 @@ public:
 		double zMax;
 		double Rotation;
 		double BlankValue;
-	string fname;
+	std::string fname;
 
 public:
 	Grid();
-	Grid(const string &fileName);
+	Grid(const std::string &fileName);
 
 	static Grid GenerateEmptyGrid(Grid& grid);
 
@@ -74,12 +73,12 @@ public:
 		});
 		return count? mean / count : 0;
 	}
-	void forEach(const function<void(int, int, double&)>& f) {
+	void forEach(const std::function<void(int, int, double&)>& f) {
 		for (int i = 0; i < nCol; ++i)
 			for (int j = 0; j < nRow; ++j)
 				f(i, j, at(i, j));
 	}
-	void forEach(const function<void(int, int, const double&)>& f) const {
+	void forEach(const std::function<void(int, int, const double&)>& f) const {
 		for (int i = 0; i < nCol; ++i)
 			for (int j = 0; j < nRow; ++j)
 				f(i, j, at(i, j));
@@ -96,7 +95,7 @@ public:
 		return *this;
 	}
 	void upScaleX(const int factor) {
-		vector<double> newData(nRow*nCol*factor);
+		std::vector<double> newData(nRow*nCol*factor);
 		for (int i = 0; i < nRow*nCol; ++i)
 			for (int k = 0; k < factor; ++k)
 				newData[i*factor+k] = data[i];
@@ -105,7 +104,7 @@ public:
 		xSize /= double(factor);
 	}
 	void upScaleY(const int factor) {
-		vector<double> newData(nRow*nCol*factor);
+		std::vector<double> newData(nRow*nCol*factor);
 		for (int i = 0; i < nRow; ++i)
 			for (int j = 0; j < nCol; ++j)
 				for (int k = 0; k < factor; ++k)
@@ -115,9 +114,9 @@ public:
 		ySize /= double(factor);
 	}
 
-	bool Read(const string &fileName);
+	bool Read(const std::string &fileName);
 	bool Read();
-	bool Write(const string &fileName);
+	bool Write(const std::string &fileName);
 	bool Write();
 };
 

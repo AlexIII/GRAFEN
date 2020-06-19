@@ -2,3 +2,6 @@
 .vscode
 x32
 x64
+*.o
+grafen_rocm
+*.hip.*

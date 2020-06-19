@@ -25,7 +25,8 @@
 #include "sharedMem.h"
 using gElementsShared = std::vector<HexahedronWid, ShmemAllocator<HexahedronWid>>;
 
-using namespace std;
+using std::string;
+using std::vector;
 using GeographicLib::TransverseMercator;
 
 #define G_CONST -6.67408
@@ -34,7 +35,7 @@ using GeographicLib::TransverseMercator;
 #define MIN_DENS 1e-8
 
 
-#define Assert(exp) do { if (!(exp)) throw runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
+#define Assert(exp) do { if (!(exp)) throw std::runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
 
 //get amount of quadrangles for nx*ny*nz discretization
 int getQdAm(const int nx, const int ny, const int nz) {
@@ -64,7 +65,7 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 	auto f = [&](const limits &lim)->int {return (int)ceil(1.62*r*double(lim.n) / lim.width()); };
 	const int v1 = f(Nlim)*f(Elim)*f(Hlim);
 	const int v2 = Nlim.n*Elim.n*Hlim.n;
-	return min(v1, v2);
+	return std::min(v1, v2);
 }
 
 //construct density model from topography model (mesh nodes in degrees)
@@ -108,8 +109,8 @@ void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, lim
 
 	const TransverseMercator proj(e.Req*1000., e.f, 1);
 
-	auto GKtoGeo = [&](const double N, double E) -> pair<double, double> {
-		pair<double, double> lb;
+	auto GKtoGeo = [&](const double N, double E) -> std::pair<double, double> {
+		std::pair<double, double> lb;
 		E = xFromGK(E, l0);
 		proj.Reverse(toDeg(l0), E*1000., N*1000., lb.second, lb.first);
 		lb.first = toRad(lb.first);
@@ -178,16 +179,16 @@ using calcFieldNodeOpts = boost::variant<GeoNormOpts, GKNormOpts>;
 //Calculate gravity field on a single node
 //If GKNormOpts: fp - field poinst in GK, field in the normal derection to reference ellipsoid in field point
 //If GeoNormOpts: fp - field poinst in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field in the normal derection to reference ellipsoid in field point
-void calcFieldNode(const calcFieldNodeOpts &opts, unique_ptr<gFieldSolver> &solver,
+void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> &solver,
 	const vector<Dat3D::Point> &fp, vector<double> &result) {
 	Assert(fp.size() == result.size());
 
 	class CalcFieldVisitor : public boost::static_visitor<void> {
-		unique_ptr<gFieldSolver> &solver;
+		std::unique_ptr<gFieldSolver> &solver;
 		const vector<Dat3D::Point> &fp;
 		vector<double> &result;
 	public:
-		CalcFieldVisitor(unique_ptr<gFieldSolver> &solver, const vector<Dat3D::Point> &fp, vector<double> &result) : solver(solver), fp(fp), result(result) {}
+		CalcFieldVisitor(std::unique_ptr<gFieldSolver> &solver, const vector<Dat3D::Point> &fp, vector<double> &result) : solver(solver), fp(fp), result(result) {}
 		void operator()(const GKNormOpts& opts) const {
 			const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
 			for (size_t i = 0; i < fp.size(); ++i) {
@@ -215,7 +216,7 @@ void calcFieldNode(const calcFieldNodeOpts &opts, unique_ptr<gFieldSolver> &solv
 	boost::apply_visitor(CalcFieldVisitor(solver, fp, result), opts);
 }
 
-class ClusterSolver : public MPI {
+class ClusterSolver : public MPIwrapper {
 public:
 	const int maxGPUmemMB = 5000;
 	int triBufferSize = 0;
@@ -223,11 +224,11 @@ public:
 
 	SharedMemBase<gElementsShared> *sharedMem = 0;
 
-	ClusterSolver() : MPI() {
-		if (gridSize < 2) throw runtime_error("You must run at least 2 MPI processes.");
-		if (root != 0) throw runtime_error("Root process must have rank = 0.");
+	ClusterSolver() : MPIwrapper() {
+		if (gridSize < 2) throw std::runtime_error("You must run at least 2 MPI processes.");
+		if (root != 0) throw std::runtime_error("Root process must have rank = 0.");
 		const auto lid = localId();
-		const int devId = !isRoot() && get<1>(lid) ? get<0>(lid) - 1 : get<0>(lid);
+		const int devId = !isRoot() && std::get<1>(lid) ? std::get<0>(lid) - 1 : std::get<0>(lid);
 		cuSolver::setDevice(devId);
 	}
 
@@ -278,7 +279,7 @@ public:
 		for (size_t i = 0; i < qSize; i += partSize) {
 			const size_t part = (i / partSize);
 			const Qiter qbegin = qs.begin() + i;
-			const Qiter qend = qs.begin() + min(i + partSize, qs.size());
+			const Qiter qend = qs.begin() + std::min(i + partSize, qs.size());
 
 			cout << ":::part " << part + 1 << " out of " << parts << "::: size: " << qend - qbegin << endl;
 			calcWithPool(opts, qbegin, qend, dat, dotPotentialRad);
@@ -312,7 +313,7 @@ private:
 		MPIpool<Dat3D::Point, double> pool(*this, fp, result, 1024);
 		int cnt = 0;
 		if (!isRoot()) {
-			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*qbegin, &*qend, dotPotentialRad, triBufferSize);
+			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*qbegin, &*qend, dotPotentialRad, triBufferSize);
 			while (1) {
 				vector<Dat3D::Point> task = pool.getTask();
 				if (!task.size()) break;
@@ -407,7 +408,7 @@ int grafenMain(int argc, char *argv[]) {
 			if (!inp.grdFile) inp.dat.write(inp.dat2D);
 			else GDconv::toGrd(inp.dat, inp.grdCols, inp.grdRows).Write(inp.grdFname);
 		}
-	} catch (exception &ex) {
+	} catch (std::exception &ex) {
 		cout << "Global exception: " << ex.what() << endl;
 		return 1;
 	}
@@ -473,7 +474,7 @@ int topogravMain(int argc, char *argv[]) {
 		if (cs.isRoot())
 			GDconv::toGrd(fieldDat, topoGrid.nCol, topoGrid.nRow).Write(inp.gravGridFname);
 
-	} catch (exception &ex) {
+	} catch (std::exception &ex) {
 		cout << "Global exception: " << ex.what() << endl;
 		return 1;
 	}
