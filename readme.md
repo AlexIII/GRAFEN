@@ -44,13 +44,21 @@ or
 Specify input parameters:
 `-Hf 0.00001`						- Height over the Ellipsoid on which the field is being calculated (km). This parameter is ignored if `-dat3D` was specified. It is not recommended to pass exactly 0.
 `-dens dens_model`			- Directory with layered density model (set of grd7 files)
+
 `-Hfrom -81` 				- Depth of the lower grid layer (density model)
+
 `-Hto 0` 					- Depth of the upper grid layer (density model)
+
 `-Hn 81` 					- Number of layers of the density model (must be same as amount of files in dens_model)
+
 `-l0 57` 					- Central meridian for Gauss-Kruger projection
+
 `-DPR 180` 				-(optional) Radius of point-field replacement (in km). If you don't specify this option, replacement radius will be automatically deduced, based on condition that the output field accuracy won't be reduced more than by 0.1%.
+
 `-toRel`					- (optional) Convert input density model to relative values
+
 `-noInvFileOrder`			- (optional) Don't invert the file order of density model
+
 `-transposeSolver`		- (optional) Solve gravity problem with transposed forward gravity field operator. Files in dens_model will be rewritten, "output field" is now treated as input.
 
 
@@ -84,7 +92,7 @@ Note, that the first host has one extra entry compared to the amount of its GPUs
 
 ## Citation
 
-If you're using our program in your work, please, reference this repo and our paper:
+If you're using our program in your work, please, reference this repo and one of our papers:
 
 1. [*Martyshko P.S., Ladovskii I.V., Byzov D.D., Chernoskutov A.I.* On Solving the Forward Problem of Gravimetry in Curvilinear and Cartesian Coordinates: Krasovskii's Ellipsoid and Plane Modeling // Izvestiya-physics of the solid earth, Volume: 54, Issue: 4, 565-573. DOI: 10.1134/S1069351318040079](https://link.springer.com/article/10.1134/S1069351318040079)
 
