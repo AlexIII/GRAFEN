@@ -110,9 +110,9 @@ void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, lim
 	};
 
 #pragma omp parallel for
-	for (int Hi = 0; Hi < Hlim.n; ++Hi)
-		for (int Ni = 0; Ni < Nlim.n; ++Ni)
-			for (int Ei = 0; Ei < Elim.n; ++Ei)
+	for (size_t Hi = 0; Hi < Hlim.n; ++Hi)
+		for (size_t Ni = 0; Ni < Nlim.n; ++Ni)
+			for (size_t Ei = 0; Ei < Elim.n; ++Ei)
 				Kr(Hi, Ni, Ei);
 
 }
@@ -320,8 +320,8 @@ int main(int argc, char *argv[]) {
 			if (cs.isRoot()) {
 				cout << "time: " << tmr.stop() << endl;
 
-				const int lsize = inp.Nlim.n*inp.Elim.n;
-				for (int i = 0; i < inp.Hlim.n; ++i) {
+				const size_t lsize = inp.Nlim.n*inp.Elim.n;
+				for (size_t i = 0; i < inp.Hlim.n; ++i) {
 					Grid g(inp.fnames[i]);
 					g.data.assign(res.cbegin() + i*lsize, res.cbegin() + (i + 1)*lsize);
 					g.Write();

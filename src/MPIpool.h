@@ -53,9 +53,9 @@ private:
 		};
 
 		std::vector<std::thread> workers(mpi.gridSize - 1);
-		for (int i = 0; i < workers.size(); ++i)
+		for (size_t i = 0; i < workers.size(); ++i)
 			workers[i] = std::thread(ker, i + 1);
-		for (int i = 0; i < workers.size(); ++i)
+		for (size_t i = 0; i < workers.size(); ++i)
 			workers[i].join();
 
 	}

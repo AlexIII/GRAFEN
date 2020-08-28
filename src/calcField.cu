@@ -158,7 +158,6 @@ public:
 	}
 private:
 	thrust::device_vector<FieldPoint> *fpCUDA[parts];
-	int devAm;
 	const double dotPotentialRad;
 	static size_t blockOffset(const size_t size, const size_t am, const size_t i) { //returns start of i'th block out of am
 		const size_t b = size / am;

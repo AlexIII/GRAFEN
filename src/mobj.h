@@ -42,9 +42,10 @@ constexpr T pow(const T& x) {
 struct limits {
 	double lower;
 	double upper;
-	int n;
+	size_t n;
 	limits() {}
 	limits(const double lower, const double upper, const int n) : lower(lower), upper(upper), n(n) {}
+	limits(const double lower, const double upper, const size_t n) : lower(lower), upper(upper), n(n) {}
 	double d() const { return (upper - lower) / (double)n; }
 	double at(const int i) const { return lower + d()*i; }
 	double atWh(const int i) const { return n>1 ? lower + dWh()*i : (upper + lower) / 2; }
@@ -180,11 +181,6 @@ public:
 	friend std::ostream& operator<<(std::ostream& os, const Triangle& q);
 };
 
-class TriangleWid : public Triangle {
-	bool isExtNorm;
-	TriangleWid(const Triangle& t, bool isExtNorm) : Triangle(t), isExtNorm(isExtNorm) {}
-};
-
 class Quadrangle {
 public:
 	Point p1;
@@ -237,7 +233,7 @@ public:
 	CUDA_HOST_DEV_FUN Hexahedron() : dens(0) {}
 	Hexahedron(const std::vector<Point> &pin, const double dens = 0) : dens(dens) { set(pin); }
 	void set(const std::vector<Point> &pin) {
-		for (int i = 0; i < std::min(pin.size(), size_t(8)); ++i)
+		for (size_t i = 0; i < std::min(pin.size(), size_t(8)); ++i)
 			p[i] = pin[i];
 	}
 
@@ -400,9 +396,9 @@ public:
 
 	void map(std::function<void (const int Li, const int Bi, const int Hi)> fun,
 			const limits Llim, const limits Blim, const limits Hlim = {0,1,1}) const {
-		for(int Hi = 0; Hi < Hlim.n; ++Hi)
-				for(int Bi = 0; Bi < Blim.n; ++Bi)
-					for(int Li = 0; Li < Llim.n; ++Li)
+		for(size_t Hi = 0; Hi < Hlim.n; ++Hi)
+				for(size_t Bi = 0; Bi < Blim.n; ++Bi)
+					for(size_t Li = 0; Li < Llim.n; ++Li)
 						fun(Li, Bi, Hi);
 	}
 
@@ -411,9 +407,9 @@ public:
 		const unsigned long max = Hlim.n*Blim.n*Llim.n;
 		unsigned long cur = 0;
 		std::cout << "  0.00%" << std::flush;
-		for(int Hi = 0; Hi < Hlim.n; ++Hi)
-				for(int Bi = 0; Bi < Blim.n; ++Bi)
-					for(int Li = 0; Li < Llim.n; ++Li) {
+		for(size_t Hi = 0; Hi < Hlim.n; ++Hi)
+				for(size_t Bi = 0; Bi < Blim.n; ++Bi)
+					for(size_t Li = 0; Li < Llim.n; ++Li) {
 						fun(Li, Bi, Hi);
 						++cur;
 						printf("\r%3u.%02u%%", (unsigned)(cur*100UL/max), (unsigned)((cur*10000UL/max)%100));

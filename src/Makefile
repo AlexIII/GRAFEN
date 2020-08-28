@@ -5,6 +5,9 @@ HIPCC_FLAGS = -Wno-unused-result
 
 CXX = g++
 CXXFLAGS = -O2 --std=c++17 -fPIE
+GNU_CXXFLAGS = -fopenmp
+
+LDFLAGS = -fopenmp
 
 TARGET = grafen_rocm
 OBJS_CPU = elFieldCU.o mobj.o Grid/Grid.o
@@ -38,10 +41,10 @@ $(OBJS_HIP): %.o: %.cpp
 
 #comple CPU
 $(OBJS_CPU): %.o: %.cpp
-	$(CXX) -o $@ $< -c $(CXXFLAGS) -I$(GEOLIB_INCLUDE_PATH) -I$(BOOST_INCLUDE_PATH) -I$(MPI_INCLUDE_PATH)
+	$(CXX) -o $@ $< -c $(CXXFLAGS) $(GNU_CXXFLAGS) -I$(GEOLIB_INCLUDE_PATH) -I$(BOOST_INCLUDE_PATH) -I$(MPI_INCLUDE_PATH)
 
 $(TARGET): $(OBJS_CPU) $(OBJS_HIP)
-	$(HIPCC) -o $@ $^ $(CXXFLAGS) -L$(GEOLIB_LIB_PATH) -lGeographic -lrt -L$(MPI_LIB_PATH) -lmpich
+	$(HIPCC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) -L$(GEOLIB_LIB_PATH) -lGeographic -lrt -L$(MPI_LIB_PATH) -lmpich
 
 clean:
 	rm -rf *.o $(TARGET)
