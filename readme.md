@@ -9,8 +9,10 @@ The program is intended to work on distributed systems with CUDA accelerators.
 *normal derivative of gravity potential
 
 
+> **Update 2020-09-04**
+> **Linux + [AMD ROCm](https://rocmdocs.amd.com/en/latest/) support**
 
-## Dependencies
+## Build dependencies (Windows + CUDA)
 You will need these only if you want to build the program yourself. If you just want to run the binaries, see [*How to run the example*](#how-to-run-the-example) section below.
 
 - Visual Studio 2017+ (Community version will do, select "Release" Configuration before building)
@@ -21,7 +23,15 @@ You will need these only if you want to build the program yourself. If you just 
 
 The program primarily designed to work with Surfer (© Golden Software) [Grid File Format](http://voxlerhelp.goldensoftware.com/voxler.htm#t=File_Formats%2FSurfer_7_Grid_File_Format.htm)
 
-For now we're only targeting Windows systems, but the source code itself is not Windows-dependent, you can try to recompile it for Linux.
+## Build dependencies (Linux + ROCm)
+
+- Ubuntu 20.04 (or anything that can run ROCm)
+- mpich (or any other MPI implementation)
+- ROCm 3.7+, see the [installation guide](https://rocmdocs.amd.com/en/latest/Installation_Guide/Installation-Guide.html)
+- [GeographicLib 1.49](https://sourceforge.net/projects/geographiclib/)
+- [Boost 1.71.0](https://www.boost.org/users/history/version_1_71_0.html)
+
+Specify paths to GeographicLib, Boost and MPI in `src/rocm.makefile` and run `cd src && make` to build. You can use `example/timan.sh` to run the example (it is required to dowload and unpack `resmodel_timan/` from *Releases*)
 
 ## Hardware requirements
 
@@ -62,11 +72,11 @@ Specify input parameters:
 `-transposeSolver`		- (optional) Solve gravity problem with transposed forward gravity field operator. Files in dens_model will be rewritten, "output field" is now treated as input.
 
 
-## How to run the example
+## How to run the example (Windows)
 
 1. Install [MS MPI](https://www.microsoft.com/en-us/download/details.aspx?id=57467)
 2. Go to `exapmle/`.
-3. Put `cudart64_101.dll`, `grafen_cu101.exe` and uncompressed folder with model `resmodel_timan/` here (all files are in *releases*).
+3. Put `cudart64_101.dll`, `grafen_cu101.exe` and uncompressed folder with model `resmodel_timan/` here (all files are in *Releases*).
 4. Fix `hosts.txt`. You need to put here hosts that will execute the program. First host is 'root' host - it does not do actual computations. All other hosts perform computations using one GPU per host. You can utilize several GPUs on a single host by putting the same host entry several times in the file.
 For example, if you have 2 GPUs on host 192.168.5.1 and 4 GPUs on host 192.168.5.2. Your `host.txt` should be as follows:
 ```
@@ -98,7 +108,7 @@ If you're using our program in your work, please, reference this repo and one of
 
 2. [*Martyshko P.S., Byzov D.D., Chernoskutov A.I.* Accounting for the influence of the Earth’s sphericity in three-dimensional density modelling. Doklady Earth Sciences, 477(1), 1325-1329 DOI: 10.1134/S1028334X17110150](http://link.springer.com/article/10.1134/S1028334X17110150)
 
-`resmodel_timan` in *releases* is a real solution of gravity filed inversion problem for a part of Timan-Pechora platform (Russia). The methodology of acquiring such a result is described in the next paper (please reference it if you're going to use the model in your work):
+`resmodel_timan` in *Releases* is a real solution of gravity filed inversion problem for a part of Timan-Pechora platform (Russia). The methodology of acquiring such a result is described in the next paper (please reference it if you're going to use the model in your work):
 
 3. [*Martyshko P.S., Ladovskii I.V., Byzov D.D., Tsidaev A.G.* Gravity Data Inversion with Method of Local Corrections for Finite Elements Models // Geosciences. 2018. Vol. 8. Issue 10. № 373. DOI: 10.3390/geosciences8100373](https://www.mdpi.com/2076-3263/8/10/373)
 
