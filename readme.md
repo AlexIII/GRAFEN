@@ -1,4 +1,4 @@
-# GRAFEN v0.1 - GRAvity Field Ellipsoidal density model Numerical computations for CUDA-enabled distributed systems
+# GRAFEN v0.2 - GRAvity Field Ellipsoidal density model Numerical computations for CUDA-enabled distributed systems
 
 ## Description
 
@@ -35,7 +35,11 @@ Specify paths to GeographicLib, Boost and MPI in `src/rocm.makefile` and run `cd
 
 ## Hardware requirements
 
-- Nvidia GPU with CUDA compute capability 3.5 or higher (any modern 2015+ Nvidia GPU will do)
+- GPU
+  - Nvidia GPU with CUDA compute capability 3.5 or higher (any modern 2015+ Nvidia GPU will do)
+  
+  OR
+  - AMD GPU [with ROCm support](https://github.com/RadeonOpenCompute/ROCm#Hardware-and-Software-Support)
 - At least 2GB GPU memory to run the example
 
 ## Program arguments
