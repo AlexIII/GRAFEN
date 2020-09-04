@@ -16,7 +16,7 @@ using std::endl;
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value)
 
-__host__ __device__ double intTrAn(const Point &q, const Triangle &t) {
+__host__ __device__ Point intTrAn(const Point &q, const Triangle &t) {
 	const Point a1 = t.p1 - q, a2 = t.p2 - q, a3 = t.p3 - q;
 	const Point a12 = t.p2 - t.p1, a23 = t.p3 - t.p2, a31 = t.p1 - t.p3;
 	const Point k = (a12*a23);
@@ -64,23 +64,19 @@ __host__ __device__ double intTrAn(const Point &q, const Triangle &t) {
 		uln3 -= (a3^K)*atan(((a23*a3) ^ (a31*a3)) / ((a3^k)*sqrt(a3^a3)));
 	}
 
-	return pr + uln1 + uln2 + uln3;
+	return t.normal() *  (pr + uln1 + uln2 + uln3);
 }
 
-__host__ __device__ double gMassPoint(const Point &p0, const Point &n0, const double mass, const Point &mp) {
+__host__ __device__ Point gMassPoint(const Point &p0, const double mass, const Point &mp) {
 	const double d = (mp - p0).eqNorm();
-	return mass*(n0 ^ (mp - p0)) / (d*d*d);
+	return ((mp - p0) / (d*d*d)) * mass;
 }
 
-__host__ __device__ double intHexTr(const Point &p0, const Point &n0, const HexahedronWid &h) {
-	double sum = 0;
+__host__ __device__ Point intHexTr(const Point &p0, const HexahedronWid &h) {
+	Point sum;
 	for (int i = 0; i < 12; ++i)
-		sum += intTrAn(p0, h.getTri(i)) * (n0^h.getTriNorm(i));
+		sum += intTrAn(p0, h.getTri(i));
 	return sum;
-}
-
-double gFieldTri(const Point p0, const Point n0, const HexahedronWid &h) {
-	return -h.dens*intHexTr(p0, n0, h);
 }
 
 bool cuSolver::isCUDAavailable() {
@@ -98,6 +94,7 @@ void cuSolver::setDevice(const int id) {
 	CUDA_CHECK_RETURN(cudaSetDevice(id));
 }
 
+/* -- TRANS SOLVER --
 class TransSolver : public gFieldInvSolver {
 public:
 	constexpr static const int parts = 4;
@@ -169,7 +166,7 @@ private:
 std::unique_ptr<gFieldInvSolver> gFieldInvSolver::getCUDAtransSolver(const std::vector<FieldPoint> &fps, const double dotPotentialRad) {
 	return std::unique_ptr<gFieldInvSolver>(new TransSolver(fps, dotPotentialRad));
 }
-
+*/
 
 class gFieldCUDAsolver : public gFieldSolver {
 public:
@@ -178,7 +175,7 @@ public:
 		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
 		qsCUDA.assign(qbegin, qend);
 		qsCUDAprec.resize(tirBufSz);
-		std::vector<MassPoint> tmp(qend - qbegin);
+		std::vector<PointValue> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
@@ -187,30 +184,30 @@ public:
 		cudaDeviceSynchronize();
 	}
 
-	double solve(const Point &p0, const Point &n0) override {
-		double res = 0;
+	Point solve(const Point &p0) override {
+		Point res;
 
 		//rough computing
 		triSz = 0;					//reset precise elemets counter
 		int* const cnt = &triSz;	//precise elemets counter
 		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
-		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), 0., thrust::plus<double>(),
-			[=] __device__(const HexahedronWid& h, const MassPoint &mp)->double {
+		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), Point(), thrust::plus<Point>(),
+			[=] __device__(const HexahedronWid& h, const PointValue &mp)->Point {
 			if ((mp - p0).eqNorm() > rad)
-				return gMassPoint(p0, n0, mp.mass, mp);
+				return gMassPoint(p0, mp.val, mp);
 			hPres[atomicAdd(cnt, 1)] = h;
-			return 0;
+			return Point();
 		});
 
 		//precise computing
 		const int blockSize = triSz;	//precise elemets buffer size
 		if (blockSize == 0) return res;
-		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->double {
-			return -h.dens*intHexTr(p0, n0, h);
+		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->Point {
+			return intHexTr(p0, h) * -h.dens;
 		};
 		const auto& triClac = [&](const auto &execPol) {
-			return thrust::transform_reduce(execPol, qsCUDAprec.begin(), qsCUDAprec.begin() + blockSize, triKr, 0., thrust::plus<double>());
+			return thrust::transform_reduce(execPol, qsCUDAprec.begin(), qsCUDAprec.begin() + blockSize, triKr, Point(), thrust::plus<Point>());
 		};
 		res += blockSize > 100 ? triClac(thrust::device) : triClac(thrust::host);
 
@@ -219,7 +216,7 @@ public:
 
 private:
 	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
-	thrust::device_vector<MassPoint> mpsCUDA;				//ro
+	thrust::device_vector<PointValue> mpsCUDA;				//ro
 	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;

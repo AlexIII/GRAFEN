@@ -117,13 +117,13 @@ void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, lim
 
 }
 
-//calculate transpose gravity field operator on a single node
-void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D::Element> psGK,
+/* -- TRANS SOLVER --
+void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D<>::Element> psGK,
 	const vector<HexahedronWid>::const_iterator &hsBegin, const vector<HexahedronWid>::const_iterator &hsEnd, const vector<double>::iterator &resBegin,
 	const double dotPotentialRad) {
 	vector<FieldPoint> fps(psGK.size());
 	const TransverseMercator proj(e.Req*1000., e.f, 1);
-	std::transform(psGK.cbegin(), psGK.cend(), fps.begin(), [&](const Dat3D::Element &el) {
+	std::transform(psGK.cbegin(), psGK.cend(), fps.begin(), [&](const Dat3D<>::Element &el) {
 		double l, B;
 		double x = xFromGK(el.p.x, l0);
 		proj.Reverse(toDeg(l0), x*1000., el.p.y*1000., B, l);
@@ -133,18 +133,18 @@ void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D::Element> psGK,
 	});
 
 	//solve
-	gFieldInvSolver::getCUDAtransSolver(fps, dotPotentialRad)
-		->solve(&*hsBegin, &*hsEnd, resBegin);
+	gFieldInvSolver::getCUDAtransSolver(fps, dotPotentialRad)->solve(&*hsBegin, &*hsEnd, resBegin);
 	std::transform(resBegin, resBegin + (hsEnd - hsBegin), resBegin, [](auto &v) {return G_CONST*v; });
 }
+*/
 
 //calculate gravity field operator on a single node
 void calcFieldNode(const Ellipsoid &e, const double l0, std::unique_ptr<gFieldSolver> &solver,
-	const vector<Dat3D::Point> &fp, vector<double> &result) {
+	const vector<Dat3D<>::Point> &fp, vector<PointValue> &result) {
 	Assert(fp.size() == result.size());
 	const TransverseMercator proj(e.Req*1000., e.f, 1);
 
-	auto Kr = [&](const Dat3D::Point &p, double& res) {
+	auto Kr = [&](const Dat3D<>::Point &p, PointValue& res) {
 		double l, B;
 
 		double x = xFromGK(p.x, l0);
@@ -153,8 +153,8 @@ void calcFieldNode(const Ellipsoid &e, const double l0, std::unique_ptr<gFieldSo
 		B = toRad(B);
 		const Point p0 = e.getPoint(B, l, p.z);
 		const Point n0 = e.getNormal(B, l);
-		res += G_CONST * solver->solve(p0, n0);
-
+		res += solver->solve(p0) * G_CONST;
+		res.val += (const Point&)res ^ n0;
 	};
 	for (size_t i = 0; i < fp.size(); ++i)
 		Kr(fp[i], result[i]);
@@ -208,7 +208,7 @@ public:
 		return sz / (sz / partSize + 1);
 	}
 
-	void calcField(Ellipsoid e, double l0, gElementsShared &qs, Dat3D &dat, double dotPotentialRad) {
+	void calcField(Ellipsoid e, double l0, gElementsShared &qs, Dat3D<PointValue> &dat, double dotPotentialRad) {
 		//cout << "Dot potential replace radius: " << dotPotentialRad << endl;
 		if (isRoot())
 			cout << "Computing nodes: " << gridSize - 1 << endl;
@@ -229,8 +229,8 @@ public:
 			calcWithPool(e, l0, qbegin, qend, dat, dotPotentialRad);
 		}
 	}
-
-	void calcTrans(Ellipsoid e, double l0, vector<gElements::base> &qs, const Dat3D &dat, vector<double> &result, const double dotPotentialRad) {
+/* -- TRANS SOLVER --
+	void calcTrans(Ellipsoid e, double l0, vector<gElements::base> &qs, const Dat3D<> &dat, vector<double> &result, const double dotPotentialRad) {
 		if (isRoot())
 			cout << "Computing nodes: " << gridSize - 1 << endl;
 
@@ -248,21 +248,21 @@ public:
 		}
 		else cout << "result gather ok" << endl;
 	}
-
+*/
 private:
-	void calcWithPool(Ellipsoid e, double l0, const Qiter &qbegin, const Qiter &qend, Dat3D &dat, double dotPotentialRad) {
-		const vector<Dat3D::Point> fp = dat.getPoints();
-		vector<double> result;
+	void calcWithPool(Ellipsoid e, double l0, const Qiter &qbegin, const Qiter &qend, Dat3D<PointValue> &dat, double dotPotentialRad) {
+		vector<Dat3D<>::Point> fp = dat.getPoints();
+		vector<PointValue> result;
 		//blocking process with rank 0 until the result's been gathered
-		MPIpool<Dat3D::Point, double> pool(*this, fp, result, 1024);
+		MPIpool<Dat3D<>::Point, PointValue> pool(*this, fp, result, 1024);
 		int cnt = 0;
 		if (!isRoot()) {
 			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*qbegin, &*qend, dotPotentialRad, triBufferSize);
 			while (1) {
-				vector<Dat3D::Point> task = pool.getTask();
+				vector<Dat3D<>::Point> task = pool.getTask();
 				if (!task.size()) break;
 				cout << "Task accepted " << ++cnt << " size: " << task.size()+1 << endl;
-				vector<double> result(task.size());
+				vector<PointValue> result(task.size());
 				calcFieldNode(e, l0, solver, task, result);
 				pool.submit(result);
 			}
@@ -300,16 +300,18 @@ int main(int argc, char *argv[]) {
 		};
 		
 		//prepocessing for direct solver
-		if (cs.isLocalRoot() && !inp.trasSolver)
+		if (cs.isLocalRoot() && !inp.transSolver)
 			prep([&]() {makeHexs(inp.l0, Earth, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, qss); });
 		//prepocessing for transpose solver
-		if (cs.isRoot() && inp.trasSolver)
+		if (cs.isRoot() && inp.transSolver)
 			prep([&]() {makeHexs(inp.l0, Earth, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, qs); });
 		cs.Barrier();
-		const size_t qSize = inp.trasSolver ? qs.size() : qss.size();
+		const size_t qSize = inp.transSolver ? qs.size() : qss.size();
 		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
 
-		if (inp.trasSolver) {
+		if (inp.transSolver) {
+			throw std::runtime_error("Transposed Solver is not implemented");
+/* -- TRANS SOLVER --			
 			vector<double> res;
 			if (cs.isRoot()) {
 				cout << "TRANSPOSE SOLVER. Your *.grd files will be overwritten!" << endl;
@@ -330,8 +332,8 @@ int main(int argc, char *argv[]) {
 				cout << "Done" << endl;
 			}
 			return 0;
+*/
 		}
-
 		if (cs.isRoot()) {
 			cout << "Clearing output file. Do NOT stop me!" << endl;
 			inp.dat.set(0);
@@ -349,8 +351,11 @@ int main(int argc, char *argv[]) {
 		const double time = tmr.stop();
 		if (cs.isRoot()) {
 			cout << "Computing finished: " << time << "sec." << endl << endl;
+			inp.dat.write(inp.dat2D);
+			/*
 			if (!inp.grdFile) inp.dat.write(inp.dat2D);
 			else GDconv::toGrd(inp.dat, inp.grdCols, inp.grdRows).Write(inp.grdFname);
+			*/
 		}
 	} catch (std::exception &ex) {
 		cout << "Global exception: " << ex.what() << endl;

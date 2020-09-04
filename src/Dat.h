@@ -48,24 +48,24 @@ std::istream& operator>>(std::istream& is, DatPoint3D& p) {
 	return is;
 }
 
-template<typename PointType>
+template<typename PointType, typename DataType>
 class Dat {
 public:
 	using Point = PointType;
 	struct Element {
 		Point p;
-		double val = 0;
+		DataType val = 0;
 	};
 	std::vector<Element> es;
 	std::string fileName;
 
-	template<typename T = const Dat<DatPoint2D>>
-	Dat(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, T> dat2D, const double z) {
+	template<typename Tval = double>
+	Dat(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, const Dat<DatPoint2D, Tval>> dat2D, const double z) {
 		set(dat2D, z);
 	}
 
-	template<typename T = const Dat<DatPoint2D>>
-	void set(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, T> dat2D, const double z) {
+	template<typename Tval = double>
+	void set(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, const Dat<DatPoint2D, Tval> &> dat2D, const double z) {
 		es.resize(dat2D.es.size());
 		transform(dat2D.es.begin(), dat2D.es.end(), es.begin(), [&z](const auto &e) {return Element{ Point{e.p.x, e.p.y, z}, e.val }; });
 		fileName = dat2D.fileName;
@@ -77,17 +77,17 @@ public:
 		return ps;
 	}
 
-	void set(const double val) {
+	void set(const DataType val) {
 		for(auto &e : es)
 			e.val = val;
 	}
 
-	void set(const std::vector<double> val) {
+	void set(const std::vector<DataType> val) {
 		for (size_t i = 0; i < es.size(); ++i)
 			es[i].val = val[i];
 	}
 
-	void add(const std::vector<double> val) {
+	void add(const std::vector<DataType> val) {
 		for (size_t i = 0; i < es.size(); ++i)
 			es[i].val += val[i];
 	}
@@ -182,8 +182,10 @@ public:
 	}
 };
 
-using Dat2D = Dat<DatPoint2D>;
-using Dat3D = Dat<DatPoint3D>;
+template <typename DataType = double>
+using Dat2D = Dat<DatPoint2D, DataType>;
+template <typename DataType = double>
+using Dat3D = Dat<DatPoint3D, DataType>;
 
 
 #endif /* DAT_H_ */

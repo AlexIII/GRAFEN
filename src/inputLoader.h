@@ -32,7 +32,7 @@ public:
 	limits Hlim;
 	double l0;
 	std::vector<std::vector<double>> dens;
-	Dat3D dat;
+	Dat3D<PointValue> dat;
 	bool noGK;
 	double dotPotentialRad = 1e8;
 	std::vector<std::string> fnames;
@@ -42,7 +42,7 @@ public:
 	int grdRows = 0;
 
 	bool noInvFileOrder = false;
-	bool trasSolver = false;
+	bool transSolver = false;
 	bool dat2D = false;
 	bool grdFile = false;
 
@@ -56,7 +56,7 @@ public:
 		InputParser ip(argc, argv);
 
 		noInvFileOrder = ip.exists("noInvFileOrder");
-		trasSolver = ip.exists("transposeSolver");
+		transSolver = ip.exists("transposeSolver");
 
 		//Hlim
 		ip["Hfrom"] >> Hlim.lower;
@@ -88,9 +88,9 @@ public:
 		if(ip.exists("densLayers")) {
 			std::string fname;
 			ip["densLayers"] >> fname;
-			Dat2D d(fname);
+			Dat2D<> d(fname);
 			dens.clear();
-			d.forEach([&](Dat2D::Element &el){ dens.push_back(std::vector<double>(Elim.n*Nlim.n, el.p.y)); });
+			d.forEach([&](Dat2D<>::Element &el){ dens.push_back(std::vector<double>(Elim.n*Nlim.n, el.p.y)); });
 		}
 
 		if(ip.exists("densVal")) {
@@ -129,7 +129,7 @@ public:
 			dat2D = !ip.exists("saveDatAs3D");
 		} else if (dat2D) {
 			ip["Hf"] >> Hf;
-			dat.set(Dat2D(datFname), Hf);
+			dat.set(Dat2D<>(datFname), Hf);
 			dat2D = !ip.exists("saveDatAs3D");
 		} else dat.read(datFname);
 

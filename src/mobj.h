@@ -93,8 +93,9 @@ public:
 	double x;
 	double y;
 	double z;
-	CUDA_HOST_DEV_FUN Point() : x(0), y(0), z(0) {}
 	CUDA_HOST_DEV_FUN Point(const double x, const double y, const double z) : x(x), y(y), z(z) {}
+	CUDA_HOST_DEV_FUN Point(const double v) : Point(v, v, v) {}
+	CUDA_HOST_DEV_FUN Point() : Point(0) {}
 	CUDA_HOST_DEV_FUN Point operator-(const Point& p) const {
 		return {x-p.x, y-p.y, z-p.z};
 	}
@@ -136,12 +137,25 @@ public:
 	friend std::ostream& operator<<(std::ostream& os, const Point& p);
 };
 
-class MassPoint : public Point {
+class PointValue : public Point {
 public:
-	double mass;
-	CUDA_HOST_DEV_FUN MassPoint() : mass(0) {}
-	CUDA_HOST_DEV_FUN MassPoint(const double x, const double y, const double z, const double mass) : Point(x, y, z), mass(mass) {}
-	CUDA_HOST_DEV_FUN MassPoint(const Point &p, const double mass) : Point(p), mass(mass) {}
+	double val;
+	CUDA_HOST_DEV_FUN PointValue() : val(0) {}
+	CUDA_HOST_DEV_FUN PointValue(const double val) : val(val) {}
+	CUDA_HOST_DEV_FUN PointValue(const double x, const double y, const double z, const double val) : Point(x, y, z), val(val) {}
+	CUDA_HOST_DEV_FUN PointValue(const Point &p, const double val = 0) : Point(p), val(val) {}
+	CUDA_HOST_DEV_FUN PointValue operator+(const PointValue& p) const {
+		return PointValue((const Point&)*this + (const Point&)p, val+p.val);
+	}
+	CUDA_HOST_DEV_FUN PointValue& operator+=(const PointValue& p) {
+		return (*this = *this + p);
+	}
+	CUDA_HOST_DEV_FUN PointValue operator+(const Point& p) const {
+		return PointValue((const Point&)*this + (const Point&)p, val);
+	}
+	CUDA_HOST_DEV_FUN Point& operator+=(const Point& p) {
+		return (*this = *this + p);
+	}
 };
 
 class Triangle {
@@ -304,8 +318,8 @@ public:
 		return r / mass;
 	}
 
-	MassPoint getMassPoint() const {
-		return MassPoint(massCenter(), volume()*dens);
+	PointValue getMassPoint() const {
+		return PointValue(massCenter(), volume()*dens);
 	}
 
 private:
@@ -454,5 +468,7 @@ std::ostream& operator<<(std::ostream& os, const limits& l);
 std::ostream& operator<<(std::ostream& os, const Point& p);
 std::ostream& operator<<(std::ostream& os, const Triangle& q);
 std::ostream& operator<<(std::ostream& os, const Quadrangle& q);
+std::ostream& operator<<(std::ostream& os, const PointValue& p);
+std::istream& operator>>(std::istream& is, const PointValue& p);
 
 #endif /* MOBJ_H_ */

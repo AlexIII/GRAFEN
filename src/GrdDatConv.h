@@ -5,8 +5,8 @@
 
 class GDconv {
 public:
-	static Dat2D toDat(const Grid &g) {
-		Dat2D dat;
+	static Dat2D<double> toDat(const Grid &g) {
+		Dat2D<double> dat;
 		for (int y = 0; y < g.nRow; ++y)
 			for (int x = 0; x < g.nCol; ++x)
 				dat.es.push_back({
@@ -17,7 +17,7 @@ public:
 		return dat;
 	}
 	template <typename PointType>
-	static Grid toGrd(const Dat<PointType>& dat, int nCol, int nRow) {
+	static Grid toGrd(const Dat<PointType, double>& dat, int nCol, int nRow) {
 		Grid g;
 		g.nRow = nRow;
 		g.nCol = nCol;
