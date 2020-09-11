@@ -53,8 +53,8 @@ class Dat {
 public:
 	using Point = PointType;
 	struct Element {
-		Point p;
-		DataType val = 0;
+		Point p{};
+		DataType val{};
 	};
 	std::vector<Element> es;
 	std::string fileName;
@@ -137,10 +137,9 @@ public:
 		Element el;
 		char buff[256];
 		while(!file.eof()) {
-			if(!file.getline(buff, 256)) break;
+			if(!file.getline(buff, sizeof(buff))) break;
 			if(!std::string(buff).length()) break;
-			std::stringstream tmp(buff);
-			tmp >> el.p >> el.val;
+			std::stringstream(buff) >> el.p >> el.val;
 			es.push_back(el);
 		}
 		file.close();

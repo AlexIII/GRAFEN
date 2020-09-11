@@ -135,7 +135,6 @@ public:
 	CUDA_HOST_DEV_FUN bool operator!=(const Point &p) const {
 		return !(*this == p);
 	}
-	friend std::ostream& operator<<(std::ostream& os, const Point& p);
 };
 
 template<typename VALTYPE>
@@ -361,9 +360,9 @@ public:
 		return PointValue<decltype(dens)>(massCenter(), dens*volume());
 	}
 
-	array<MagLine, 3> getLines() const {
-		array<int, 3> n{0, 1, 3};
-		array<MagLine, 3> res;
+	std::array<MagLine, 3> getLines() const {
+		std::array<int, 3> n{0, 1, 3};
+		std::array<MagLine, 3> res;
 		const std::vector<Quadrangle> qrs = splitQr();
 		for (int cnt = 0; cnt < 3; ++cnt) {
 			const int i = n[cnt];
@@ -530,10 +529,10 @@ std::ostream& operator<<(std::ostream& os, const PointValue<T>& p) {
 	return os;
 }
 template <typename T>
-std::istream& operator>>(std::istream& is, const PointValue<T>& p) {
+std::istream& operator>>(std::istream& is, PointValue<T>& p) {
 	is >> p.val >> p.x >> p.y >> p.z;
 	return is;
 }
-std::istream& operator>>(std::istream& is, const Point& p);
+std::istream& operator>>(std::istream& is, Point& p);
 
 #endif /* MOBJ_H_ */

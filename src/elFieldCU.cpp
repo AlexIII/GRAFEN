@@ -67,6 +67,7 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 	auto f = [&](const limits &lim)->int {return (int)ceil(1.62*r*double(lim.n) / lim.width()); };
 	const int v1 = f(Nlim)*f(Elim)*f(Hlim);
 	const int v2 = Nlim.n*Elim.n*Hlim.n;
+	if(v2 < 40000) return v2;
 	return std::min(v1, v2);
 }
 
@@ -354,8 +355,8 @@ int main(int argc, char *argv[]) {
 			inp.dat.write();
 		}
 	}
-	catch (exception &ex) {
-		if(isRoot) cerr << "Global exception: " << ex.what() << endl;
+	catch (std::exception &ex) {
+		if(isRoot) std::cerr << "Global exception: " << ex.what() << endl;
 		return 1;
 	}
 	cout << "Done" << endl;

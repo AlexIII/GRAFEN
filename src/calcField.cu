@@ -7,6 +7,7 @@
 #include <thrust/execution_policy.h>
 #include "cuVar.h"
 #include <mutex>
+#include <array>
 
 using std::cout;
 using std::endl;
@@ -175,7 +176,7 @@ public:
 		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
 		qsCUDA.assign(qbegin, qend);
 		qsCUDAprec.resize(tirBufSz);
-		std::vector<array<MagLine, 3>> tmp(qend - qbegin);
+		std::vector<std::array<MagLine, 3>> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getLines(); });
 		linesCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
@@ -193,9 +194,9 @@ public:
 		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
 		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), linesCUDA.begin(), Point(), thrust::plus<Point>(),
-			[=] __device__(const HexahedronWid& h, const array<MagLine, 3> &ml)->Point {
-			if ((ml._Elems[0].p1 - p0).eqNorm() > rad)
-				return ml._Elems[0].Hfield(p0) + ml._Elems[1].Hfield(p0) + ml._Elems[2].Hfield(p0);
+			[=] __device__(const HexahedronWid& h, const std::array<MagLine, 3> &ml)->Point {
+			if ((ml[0].p1 - p0).eqNorm() > rad)
+				return ml[0].Hfield(p0) + ml[1].Hfield(p0) + ml[2].Hfield(p0);
 			hPres[atomicAdd(cnt, 1)] = h;
 			return Point();
 		});
@@ -216,7 +217,7 @@ public:
 
 private:
 	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
-	thrust::device_vector<array<MagLine, 3>> linesCUDA;		//ro
+	thrust::device_vector<std::array<MagLine, 3>> linesCUDA;		//ro
 	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;

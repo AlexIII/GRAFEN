@@ -77,8 +77,8 @@ public:
 			Elim = {g.xLL, g.xLL + (g.nCol-1)*g.xSize, g.nCol};
 			Nlim = {g.yLL, g.yLL + (g.nRow-1)*g.ySize, g.nRow};
 			if(fnames.size() < Hlim.n*3)
-				throw runtime_error("Not enough density files have been found");
-		} else throw runtime_error("No density specified");
+				throw std::runtime_error("Not enough density files have been found");
+		} else throw std::runtime_error("No density specified");
 
 		ip["l0"] >> l0;
 		l0 = toRad(l0);
@@ -93,7 +93,7 @@ public:
 				for (auto &e : dat.es)
 					e.p.z = Hf;
 			}
-		} else throw runtime_error("No *.dat file has been specified.");
+		} else throw std::runtime_error("No *.dat file has been specified.");
 
 		if (ip.exists("DPR"))
 			ip["DPR"] >> dotPotentialRad;
@@ -121,7 +121,7 @@ public:
 			auto x = Grid(fnames[i]).data;
 			auto y = Grid(fnames[i+1]).data;
 			auto z = Grid(fnames[i+2]).data;
-			vector<Point> t;
+			std::vector<Point> t;
 			for (int i = 0; i < x.size(); ++i)
 				//t.push_back({ 0, 0, z[i] });
 				//t.push_back({ x[i], 2*y[i], 4*z[i] });

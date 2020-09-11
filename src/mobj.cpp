@@ -32,7 +32,7 @@ std::ostream& operator<<(std::ostream& os, const Quadrangle& q) {
 	return os;
 }
 
-std::istream& operator>>(std::istream& is, const Point& p) {
+std::istream& operator>>(std::istream& is, Point& p) {
 	is >> p.x >> p.y >> p.z;
 	return is;
 }
