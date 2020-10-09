@@ -255,7 +255,7 @@ public:
 	}
 };
 
-Point intHexTr(const Point &p0, const HexahedronWid &h);
+Point intHexTr__(const Point &p0, const HexahedronWid &h);
 
 void hexTest() {
 	Hexahedron h({
@@ -272,18 +272,18 @@ void hexTest() {
 	for (double i = 0; i < l.n; ++i) {
 		for (int j = 0; j < l.n; ++j) {
 			const Point p0{ l.atWh(j), l.atWh(i), H };
-			const Point res = (-intHexTr(p0, hw)
+			const Point res = (-intHexTr__(p0, hw)
 					 + (h.isIn(p0)? h.dens * (4.*M_PI / 3.) : Point())
 				) / (4 * M_PI);
 			dat.es.push_back({ { p0.x, p0.y }, res });
 		}
 	}
 
-	dat.write("cubeFieldSZ_IN.dat"s);
+	dat.write("cubeFieldSZ_IN.dat");
 	cout << "Done." << endl;
 }
 
-class WellDemagCluster : public MPI {
+class WellDemagCluster : public MPIwrapper {
 public:
 	const int maxGPUmemMB = 5000;
 	int triBufferSize = 0;
@@ -291,15 +291,18 @@ public:
 
 	SharedMemBase<gElementsShared> *sharedMem = 0;
 
-	WellDemagCluster() : MPI() {
-		if (gridSize < 2) throw runtime_error("You must run at least 2 MPI processes.");
-		if (root != 0) throw runtime_error("Root process must have rank = 0.");
+	WellDemagCluster() : MPIwrapper() {
+		if (gridSize < 2) throw std::runtime_error("You must run at least 2 MPI processes.");
+		if (root != 0) throw std::runtime_error("Root process must have rank = 0.");
 		const auto lid = localId();
-		const int devId = !isRoot() && get<1>(lid) ? get<0>(lid) - 1 : get<0>(lid);
+		const int devId = !isRoot() && std::get<1>(lid) ? std::get<0>(lid) - 1 : std::get<0>(lid);
 		cuSolver::setDevice(devId);
 	}
 
 	void run(int argc, char *argv[]) {
+		if(isRoot()) hexTest();
+		return;
+
 		InputParser inp(argc, argv);
 		/*
 		if (!isRoot()) return;
@@ -317,15 +320,15 @@ public:
 
 		const string oFname = "wellField.dat";
 		VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
-		inp["xn"] >> v.x.n;
-		inp["yn"] >> v.y.n;
+		if(inp.exists("xn")) inp["xn"] >> v.x.n;
+		if(inp.exists("yn")) inp["yn"] >> v.y.n;
 		if(inp.exists("zn")) inp["zn"] >> v.z.n;
 
 		const limits fieldDimX = { 0, 8.1, 60 }, fieldDimY = { 0, 8.1, 60 };
 		Cylinder well = { { { 4.1, 4.1 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-		inp["rwell"] >> well.r;
+		if(inp.exists("rwell")) inp["rwell"] >> well.r;
 		double Kouter = 0.02;
-		const double Kinner0 = 0.04;
+		const double Kinner0 = 0;
 		const Point Hprime = { 14, 14, 35 }; //~40A/m
 		double H = 0.25;
 		if (inp.exists("H")) inp["H"] >> H;
@@ -354,7 +357,7 @@ public:
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
 		const auto &fOnDat = [&hsi, &H, &fieldDimX, &fieldDimY](Dat3D<Point> &res) {
-			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
 			
 			for (auto &i : res)
 				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
@@ -384,7 +387,7 @@ public:
 
 		const auto &fOn = [&hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
 			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
-			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
 			int pp = -1;
 			for (int i = 0; i < x.y.n; ++i) {
 				for (int j = 0; j < x.x.n; ++j) {
@@ -408,7 +411,7 @@ public:
 		const auto &fJn = [&hsi, &K, &J0, this](vector<Point> &res) {
 			Bcast(hsi);
 			
-			unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
 			vector<Point> fieldPoints(res.size());
 			std::transform(hsi.cbegin(), hsi.cbegin() + fieldPoints.size(), fieldPoints.begin(), [](const HexahedronWid &h) {return h.massCenter();});
 			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
@@ -470,16 +473,22 @@ public:
 				bool cont = false;
 				Bcast(cont);
 				if (!cont) break;
-				fJn(vector<Point>());
+				auto nullVect = vector<Point>();
+				fJn(nullVect);
 			}
 			cout << "Done." << endl;
 			return;
 		}
 
 		//expJ("J0.dat");
-		fInWell("inWell0.dat"s);
-		fOn("wellField0"s);
+		fInWell("inWell0.dat");
+		fOn("wellField0");
 		cout << "No demag solving done" << endl;
+
+		//end here
+		Bcast(false);
+		return;
+		
 		
 		const double eps = 1e-4;
 		const int maxIter = 10;
@@ -498,14 +507,14 @@ public:
 				return sqrt(sum);
 			}();
 			cout << "Err: " << err << endl;
-			//fOn("wellField.dat"s);
+			//fOn("wellField.dat");
 		}
 		bool cont = false;
 		Bcast(cont);
 
 		//expJ("Jn.dat");
-		fOn("wellField"s);
-		fInWell("inWell.dat"s);
+		fOn("wellField");
+		fInWell("inWell.dat");
 
 		cout << "Master Done." << endl;
 	}

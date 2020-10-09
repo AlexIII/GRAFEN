@@ -2,6 +2,8 @@
 #include <stdexcept>
 #include "Grid.h"
 
+using namespace std;
+
 #ifdef win32
 int isinf(double s)
 {

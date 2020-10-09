@@ -103,6 +103,10 @@ public:
 	void Bcast(T &v) {
 		error(MPI_Bcast(&v, sizeof(T), MPI_UINT8_T, root, comm));
 	}
+	template <typename T>
+	void Bcast(T &&v) {
+		Bcast(v);
+	}
 
 	template<typename T, typename... Args>
 	void Bcast(T &v, Args&... args) {

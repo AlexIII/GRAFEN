@@ -36,8 +36,8 @@ public:
 	std::string fname;
 
 public:
-	Grid();
 	Grid(const std::string &fileName);
+	Grid(int nRow = 1, int nCol = 1, double xLL = 0, double yLL = 0, double xSize = 1, double ySize = 1);
 
 	static Grid GenerateEmptyGrid(Grid& grid);
 

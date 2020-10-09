@@ -140,8 +140,8 @@ public:
 		file.close();
 	}
 
-	void write(const bool as2D = false) {
-		write(fileName, as2D);
+	void write() {
+		write(fileName);
 	}
 
 	void write(const char* fname, const bool as2D = false) {
