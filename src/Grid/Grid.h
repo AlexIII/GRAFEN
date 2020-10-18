@@ -22,22 +22,31 @@ private:
 	bool Init();
 
 public:
-		std::vector<double> data;
-		int nRow;
-		int nCol;
-		double xLL;
-		double yLL;
-		double xSize;
-		double ySize;
-		double zMin;
-		double zMax;
-		double Rotation;
-		double BlankValue;
+	std::vector<double> data;
+	int nRow;
+	int nCol;
+	double xLL;
+	double yLL;
+	double xSize;
+	double ySize;
+	double zMin;
+	double zMax;
+	double Rotation;
+	double BlankValue;
 	std::string fname;
 
 public:
 	Grid(const std::string &fileName);
 	Grid(int nRow = 1, int nCol = 1, double xLL = 0, double yLL = 0, double xSize = 1, double ySize = 1);
+	Grid(const Grid& grid) = default;
+
+	Grid& operator-=(const Grid& g) {
+		if(nCol != g.nCol || nRow != g.nRow)
+			throw std::runtime_error("Cannot perform operation \"-\" on different sized grids.");
+		for(size_t i = 0; i < g.data.size(); ++i)
+			data[i] -= g.data[i];
+		return *this;
+	}
 
 	static Grid GenerateEmptyGrid(Grid& grid);
 
@@ -121,3 +130,4 @@ public:
 };
 
 std::ostream& operator<<(std::ostream& os, const Grid& g);
+Grid operator-(const Grid& g1, const Grid& g2);

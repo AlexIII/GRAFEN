@@ -38,8 +38,8 @@ public:
 		}
 	}
 
-	std::istringstream& operator[](const std::string &key) {
-		retVal.clear();
+	std::istringstream operator[](const std::string &key) const {
+		std::istringstream retVal;
 		try {
 			retVal.str(inp.at(key));
 		}catch(...) {
@@ -48,7 +48,7 @@ public:
 		return retVal;
 	}
 
-	bool exists(const std::string &key) {
+	bool exists(const std::string &key) const {
 		bool tmp = false;
 		try {
 			inp.at(key);
@@ -63,7 +63,6 @@ public:
 
 private:
 	std::map<std::string,std::string> inp;
-	std::istringstream retVal;
 
 	bool isNumber(const std::string& s) {
 	    char* p;

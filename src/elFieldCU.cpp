@@ -205,6 +205,28 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const do
 }
 
 template <class VAlloc>
+void cubeGen(const Volume &v, const Point J, vector<HexahedronWid, VAlloc> &hsi) {
+	hsi.resize(v.x.n * v.y.n * v.z.n);
+
+	for (int zi = 0; zi < v.z.n; ++zi)
+		for (int yi = 0; yi < v.y.n; ++yi)
+			for (int xi = 0; xi < v.x.n; ++xi) {				
+				Quadrangle cur{
+					Point{v.x.at(xi+1), v.y.at(yi+1), 0}, 
+					Point{v.x.at(xi+1), v.y.at(yi), 0}, 
+					Point{v.x.at(xi), v.y.at(yi+1), 0}, 
+					Point{v.x.at(xi), v.y.at(yi), 0}, 
+				};
+
+				const int ind = (zi*v.y.n + yi)*v.x.n + xi;
+				hsi[ind] = Hexahedron{
+					cur + Point{0, 0, v.z.at(zi)},
+					cur + Point{0, 0, v.z.at(zi + 1)},
+					J };
+			}	
+}
+
+template <class VAlloc>
 void makeCloud(const vector<HexahedronWid, VAlloc> &hsi, const string datFname) {
 	Dat2D<> dat;
 	for (const auto& h : hsi)
@@ -300,59 +322,76 @@ public:
 	}
 
 	void run(int argc, char *argv[]) {
-		if(isRoot()) hexTest();
-		return;
-
 		InputParser inp(argc, argv);
-		/*
-		if (!isRoot()) return;
-		Quadrangle q{ Point{ 1,1,1 }, Point{ 1,-1,1 }, Point{ -1,1,1 }, Point{ -1,-1,1 } };
-		Hexahedron h(q, q + Point{ 0.2,0.3,-2 });
-		vector<Point> tests = { {0.1,0.1,0.1}, {0, 0, 4},{ 4, 0, 0 },{ 0, 4, -2 } };
-		for (auto &test : tests) {
-			for (auto &tri : h.splitFaces())
-				cout << tri.getSide(test) << " ";
-			cout <<(h.isIn(test) ? "In" : "Out");
-			cout << endl;
-		}
-		return;
-		*/
-
-		const string oFname = "wellField.dat";
-		VolumeMod v = Volume{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
-		if(inp.exists("xn")) inp["xn"] >> v.x.n;
-		if(inp.exists("yn")) inp["yn"] >> v.y.n;
-		if(inp.exists("zn")) inp["zn"] >> v.z.n;
-
-		const limits fieldDimX = { 0, 8.1, 60 }, fieldDimY = { 0, 8.1, 60 };
-		Cylinder well = { { { 4.1, 4.1 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-		if(inp.exists("rwell")) inp["rwell"] >> well.r;
-		double Kouter = 0.02;
-		const double Kinner0 = 0;
-		const Point Hprime = { 14, 14, 35 }; //~40A/m
+		
 		double H = 0.25;
 		if (inp.exists("H")) inp["H"] >> H;
 
-		//read K inner
-		vector<double> Kinner(v.z.n, Kinner0);
-		if (inp.exists("kin")) {
-			string KinnerFname;
-			inp["kin"] >> KinnerFname;
-			Dat2D<> Kin(KinnerFname);
-			v.z = { -Kin.xMax(), 0, (int)Kin.size() };
-			Kinner.resize(v.z.n);
-			double meanK = 0;
-			for (int i = 0; i < Kin.size(); ++i)
-				meanK += Kinner[Kin.size() - i - 1] = Kin[i].p.y / 1e5;
-			meanK /= Kin.size();
-			Kouter = meanK;
-			cout << "Kouter: " << Kouter << endl;
-		}
+		//well Model
+		const auto wellModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &K){
+			Volume v{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
+			if(inp.exists("xn")) inp["xn"] >> v.x.n;
+			if(inp.exists("yn")) inp["yn"] >> v.y.n;
+			if(inp.exists("zn")) inp["zn"] >> v.z.n;
+
+			Cylinder well = { { { 4.1, 4.1 }, 0.25 }, 100 }; //x_cener, y_center, r, h
+			if(inp.exists("rwell")) inp["rwell"] >> well.r;
+			double Kouter = 0.02;
+			const double Kinner0 = 0;
+			const Point Hprime = { 14, 14, 35 }; //~40A/m
+
+			//read K inner
+			vector<double> Kinner(v.z.n, Kinner0);
+			if (inp.exists("kin")) {
+				string KinnerFname;
+				inp["kin"] >> KinnerFname;
+				Dat2D<> Kin(KinnerFname);
+				v.z = { -Kin.xMax(), 0, (int)Kin.size() };
+				Kinner.resize(v.z.n);
+				double meanK = 0;
+				for (int i = 0; i < Kin.size(); ++i)
+					meanK += Kinner[Kin.size() - i - 1] = Kin[i].p.y / 1e5;
+				meanK /= Kin.size();
+				Kouter = meanK;
+				cout << "Kouter: " << Kouter << endl;
+			}
+		};
+
+		//const limits fieldDim = { 0, 8.1, 60 };
+		//calcDemag(wellModelGenerator, fieldDim, fieldDim, H, "well");
+
+		Volume cubeVolume{ { -20, 20, 1 },{ -20, 20, 1 },{ 0, -4, 1 } };
+		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel) {
+			if(inp.exists("xn")) inp["xn"] >> cubeVolume.x.n;
+			if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
+			if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
+
+			const double K = 0.02;
+			const Point Hprime = { 14, 14, 35 }; //~40A/m
+
+			cubeGen(cubeVolume, (Hprime*K), hsi);
+			Kmodel.assign(hsi.size(), K);
+		};
+
+		const limits fieldDim = { -25 + 0.00001, 25 + 0.00001, 40 };
+		calcDemag(cubeModelGenerator, cubeVolume, fieldDim, fieldDim, H, "cube");
+
+	}
+
+private:
+	void calcDemag(
+			const std::function<void(vector<HexahedronWid>&, vector<double>&)> &modelGenerator,
+			const Volume& v,
+			const limits& fieldDimX, const limits& fieldDimY, const double H,
+			const string& filePrefix
+		) {
 		
-		cout << "Generating model..." << endl;
+		if(isRoot()) cout << "Generating model..." << endl;
 		vector<HexahedronWid> hsi;
 		vector<double> K;
-		wellGen(v, well, Hprime, Kouter, Kinner, hsi, K);
+		modelGenerator(hsi, K);
+		if(isRoot()) cout << "Model size: " << hsi.size() << endl;
+
 		vector<Point> J0(hsi.size());
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
@@ -374,7 +413,7 @@ public:
 
 			return cnt;
 		};
-
+/*
 		const auto &fInWell = [&v, &well, &fOnDat](const string fname) {
 			Dat3D<Point> dat;
 			for (int i = 1; i < v.z.n; ++i)
@@ -384,7 +423,9 @@ public:
 				cout << "WARNING! 'Inside' count: " << cnt << "/" << v.z.n << endl;
 			dat.write(fname);
 		};
+*/
 
+		//calculate field on a plane of heigh 'H' above model and save to 'fname'_x.dat, 'fname'_y.dat, 'fname'_z.dat
 		const auto &fOn = [&hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
 			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
 			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
@@ -408,6 +449,8 @@ public:
 			y.toGrid().Write(fname + "_y.grd");
 			z.toGrid().Write(fname + "_z.grd");
 		};
+
+		//re-calculate J (magnetization) in every Hexahedron
 		const auto &fJn = [&hsi, &K, &J0, this](vector<Point> &res) {
 			Bcast(hsi);
 			
@@ -442,7 +485,9 @@ public:
 			}
 			*/
 		};
-		const auto& residualAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
+
+		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
+		const auto& residualEqAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
 			double sum = 0;
 			for (int i = 0; i < res.size(); ++i) {
 				const Point v = res[i] - hsi[i].dens;
@@ -451,23 +496,39 @@ public:
 			}
 			return sqrt(sum);
 		};
+		const auto& residualMaxAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
+			double maxDiff = 0;
+			for (int i = 0; i < res.size(); ++i) {
+				const Point v = res[i] - hsi[i].dens;
+				maxDiff = std::max({maxDiff, std::abs(v.x), std::abs(v.y), std::abs(v.z)});
+				hsi[i].dens = res[i];
+			}
+			return maxDiff;
+		};
+
 
 		const auto &expJ = [&hsi, &v](const string fname) {	//dump J of upper layer
-			Dat2D<Point> dat;
+			const int layerIdx = 0;
+			Field x{ v.x, v.y }, y{ x }, z{ x };
 			for (int i = 0; i < v.y.n; ++i) {
 				for (int j = 0; j < v.x.n; ++j) {
-					const auto& h = hsi[i * v.x.n + j];
+					const auto& h = hsi[layerIdx * (v.y.n*v.x.n) + i * v.x.n + j];
 					const Point p0 = h.massCenter();
-					dat.es.push_back({ { p0.x, p0.y }, h.dens });
+					x.data[i*x.x.n + j] = h.dens.x;
+					y.data[i*x.x.n + j] = h.dens.y;
+					z.data[i*x.x.n + j] = h.dens.z;
 				}
 			}
-			cout << endl;
-			dat.write(fname);
+			x.toGrid().Write(fname + "_x.grd");
+			y.toGrid().Write(fname + "_y.grd");
+			z.toGrid().Write(fname + "_z.grd");
+			cout << "expJ() done." << endl;
 		};
 
 		
 		cout << "Solving..." << endl;
 
+		//not Root will return from this if
 		if (!isRoot()) {
 			while (1) {
 				bool cont = false;
@@ -480,17 +541,19 @@ public:
 			return;
 		}
 
-		//expJ("J0.dat");
-		fInWell("inWell0.dat");
-		fOn("wellField0");
+		//Only Root will continue from here
+
+		expJ(filePrefix + "J0");
+		//fInWell("inWell0.dat");
+		fOn(filePrefix + "Field0");
 		cout << "No demag solving done" << endl;
 
 		//end here
-		Bcast(false);
-		return;
+		//Bcast(false);
+		//return;
 		
 		
-		const double eps = 1e-4;
+		const double eps = 1e-6;
 		const int maxIter = 10;
 		double err = 1;
 		for (int it = 0; it < maxIter && err > eps; ++it) {
@@ -500,21 +563,33 @@ public:
 			vector<Point> In(hsi.size());
 			fJn(In);
 			cout << endl;
-			err = residualAndCopy(In, hsi) / [&In]() {
+			err = residualMaxAndCopy(In, hsi) / [&In]() {
+				double maxDiff = 0;
+				for (auto& v: In)
+					maxDiff = std::max({maxDiff, std::abs(v.x), std::abs(v.y), std::abs(v.z)});
+				return maxDiff;
+			}();
+			/*
+			err = residualEqAndCopy(In, hsi) / [&In]() {
 				double sum = 0;
 				for (auto& i: In)
 					sum += i ^ i;
 				return sqrt(sum);
 			}();
+			*/
 			cout << "Err: " << err << endl;
-			//fOn("wellField.dat");
+			//fOn(filePrefix + "Field.dat");
 		}
 		bool cont = false;
 		Bcast(cont);
 
-		//expJ("Jn.dat");
-		fOn("wellField");
-		fInWell("inWell.dat");
+		expJ(filePrefix + "Jn");
+		fOn(filePrefix + "Field");
+		//fInWell("inWell.dat");
+
+		(Grid(filePrefix + "J0_x.grd") - Grid(filePrefix + "Jn_x.grd")).Write(filePrefix + "_dJ_x.grd");
+		(Grid(filePrefix + "J0_z.grd") - Grid(filePrefix + "Jn_z.grd")).Write(filePrefix + "_dJ_z.grd");
+
 
 		cout << "Master Done." << endl;
 	}
@@ -727,6 +802,9 @@ private:
 int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
+		//hexTest();
+		//return 0;
+
 		WellDemagCluster().run(argc, argv);
 		//wellTest(argc, argv);
 		return 0;

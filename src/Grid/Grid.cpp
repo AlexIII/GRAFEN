@@ -194,3 +194,9 @@ std::ostream& operator<<(std::ostream& os, const Grid& g) {
 			"ySize=" << g.ySize;
 	return os;
 }
+
+Grid operator-(const Grid& g1, const Grid& g2) {
+	Grid g(g1);
+	g -= g2;
+	return g;
+}

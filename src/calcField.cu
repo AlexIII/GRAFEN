@@ -49,7 +49,7 @@ __host__ __device__ Point intTrAn(const Point &p0, const Triangle &t) {
 Point intHexTr__(const Point &p0, const HexahedronWid &h) {
 	Point sum;
 	for (int i = 0; i < 12; ++i) {
-		const auto tri = h.getTri(i);//getTriSafeZ(i);
+		const auto tri = h.getTri(i);
 		sum += intTrAn(p0, tri) * (tri.normal() ^ h.dens);
 	}
 	return sum;

@@ -495,9 +495,11 @@ public:
 			case 0:
 			case 1:
 				if (!isOnOneSide(p[2], p[1], p[0], p[3])) {
+					//upper quadrangle is convex
 					if(i == 0) return Triangle(p[2], p[3], p[1]);
 					else return Triangle(p[2], p[1], p[0]);
 				} else {
+					//upper quadrangle is not convex
 					if (i == 0) return Triangle(p[3], p[1], p[0]);
 					else return Triangle(p[3], p[0], p[2]);
 				}
@@ -519,10 +521,12 @@ public:
 			case 10:
 			case 11:
 				if (!isOnOneSide(p[6], p[5], p[4], p[7])) {
+					//lower quadrangle is convex
 					if (i == 10) return Triangle(p[6], p[4], p[5]);
 					else return Triangle(p[6], p[5], p[7]);
 				}
 				else {
+					//lower quadrangle is not convex
 					if (i == 10) return Triangle(p[4], p[5], p[7]);
 					else return Triangle(p[4], p[7], p[6]);
 				}
