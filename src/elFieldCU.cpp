@@ -361,11 +361,11 @@ public:
 		//calcDemag(wellModelGenerator, fieldDim, fieldDim, H, "well");
 
 		Volume cubeVolume{ { -20, 20, 1 },{ -20, 20, 1 },{ 0, -4, 1 } };
-		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel) {
-			if(inp.exists("xn")) inp["xn"] >> cubeVolume.x.n;
-			if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
-			if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
+		if(inp.exists("xn")) inp["xn"] >> cubeVolume.x.n;
+		if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
+		if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
 
+		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel) {
 			const double K = 0.02;
 			const Point Hprime = { 14, 14, 35 }; //~40A/m
 
@@ -373,9 +373,16 @@ public:
 			Kmodel.assign(hsi.size(), K);
 		};
 
+		double DPR = std::max({ cubeVolume.x.d(), cubeVolume.y.d(), cubeVolume.z.d() }) * 4;
+		if(inp.exists("DPR")) inp["DPR"] >> DPR;
+		if(isRoot()) cout << "DPR: " << DPR << (DPR < 0? " (disabled)" : "") << endl;
 		const limits fieldDim = { -25 + 0.00001, 25 + 0.00001, 40 };
-		calcDemag(cubeModelGenerator, cubeVolume, fieldDim, fieldDim, H, "cube");
-
+		Stopwatch tmr;
+		tmr.start();
+		calcDemag(cubeModelGenerator, cubeVolume, fieldDim, fieldDim, H, "cube", DPR);
+		if(isRoot()) {
+			cout << "Total time: " << tmr.stop() << "sec." << endl;
+		}
 	}
 
 private:
@@ -383,7 +390,8 @@ private:
 			const std::function<void(vector<HexahedronWid>&, vector<double>&)> &modelGenerator,
 			const Volume& v,
 			const limits& fieldDimX, const limits& fieldDimY, const double H,
-			const string& filePrefix
+			const string& filePrefix,
+			const double DPR
 		) {
 		
 		if(isRoot()) cout << "Generating model..." << endl;
@@ -395,8 +403,15 @@ private:
 		vector<Point> J0(hsi.size());
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
-		const auto &fOnDat = [&hsi, &H, &fieldDimX, &fieldDimY](Dat3D<Point> &res) {
-			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+		const auto createCudaSolver = [&DPR](const vector<HexahedronWid>& hsi) {
+			return	DPR < 0
+				? gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend())
+				: gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), DPR, hsi.size())\
+			;
+		};
+
+		const auto &fOnDat = [&createCudaSolver, &hsi, &H, &fieldDimX, &fieldDimY](Dat3D<Point> &res) {
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
 			
 			for (auto &i : res)
 				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
@@ -426,9 +441,9 @@ private:
 */
 
 		//calculate field on a plane of heigh 'H' above model and save to 'fname'_x.dat, 'fname'_y.dat, 'fname'_z.dat
-		const auto &fOn = [&hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
+		const auto &fOn = [&createCudaSolver, &hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
 			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
-			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
 			int pp = -1;
 			for (int i = 0; i < x.y.n; ++i) {
 				for (int j = 0; j < x.x.n; ++j) {
@@ -451,10 +466,10 @@ private:
 		};
 
 		//re-calculate J (magnetization) in every Hexahedron
-		const auto &fJn = [&hsi, &K, &J0, this](vector<Point> &res) {
+		const auto &fJn = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> &res) {
 			Bcast(hsi);
-			
-			std::unique_ptr<gFieldSolver> solver = gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
 			vector<Point> fieldPoints(res.size());
 			std::transform(hsi.cbegin(), hsi.cbegin() + fieldPoints.size(), fieldPoints.begin(), [](const HexahedronWid &h) {return h.massCenter();});
 			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
@@ -553,7 +568,7 @@ private:
 		//return;
 		
 		
-		const double eps = 1e-6;
+		const double eps = 1e-4;
 		const int maxIter = 10;
 		double err = 1;
 		for (int it = 0; it < maxIter && err > eps; ++it) {

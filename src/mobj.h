@@ -47,10 +47,10 @@ struct limits {
 	limits() {}
 	limits(const double lower, const double upper, const int n) : lower(lower), upper(upper), n(n) {}
 	limits(const double lower, const double upper, const size_t n) : lower(lower), upper(upper), n(n) {}
-	double d() const { return (upper - lower) / (double)n; }
+	double d() const { return n > 0? (upper - lower) / (double)n : (upper - lower); }
 	double at(const int i) const { return lower + d()*i; }
 	double atWh(const int i) const { return n>1 ? lower + dWh()*i : (upper + lower) / 2; }
-	double dWh() const { return n>1 ? (upper - lower) / (double)(n - 1) : (upper - lower); }
+	double dWh() const { return n > 1 ? (upper - lower) / (double)(n - 1) : (upper - lower); }
 
 	void scale(const double s) { lower *= s; upper *= s; }
 	double width() const { return upper - lower; }
