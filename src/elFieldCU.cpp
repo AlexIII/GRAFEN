@@ -250,7 +250,7 @@ void makeBln(const vector<HexahedronWid, VAlloc> &hsi, const string datFname, co
 			dat.es.push_back({ { h.p[0].x, h.p[0].y }, 0 });
 			*/
 			for (int i = 0; i < 2; ++i) {
-				const Triangle t = h.getTriSafeZ(i);
+				const auto t = h.getTri(i);
 				//const Triangle t = h.getTri(i);
 				dat.es.push_back({ { 4, 0 }, 0 });
 				dat.es.push_back({ { t.p1.x, t.p1.y }, 0 });
@@ -578,20 +578,22 @@ private:
 			vector<Point> In(hsi.size());
 			fJn(In);
 			cout << endl;
+			
+			/*
 			err = residualMaxAndCopy(In, hsi) / [&In]() {
 				double maxDiff = 0;
 				for (auto& v: In)
 					maxDiff = std::max({maxDiff, std::abs(v.x), std::abs(v.y), std::abs(v.z)});
 				return maxDiff;
 			}();
-			/*
+			*/
 			err = residualEqAndCopy(In, hsi) / [&In]() {
 				double sum = 0;
 				for (auto& i: In)
 					sum += i ^ i;
 				return sqrt(sum);
 			}();
-			*/
+			
 			cout << "Err: " << err << endl;
 			//fOn(filePrefix + "Field.dat");
 		}

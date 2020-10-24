@@ -17,25 +17,27 @@ using std::endl;
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value)
 
-__host__ __device__ inline double tripleprod(const Point& o1, const Point& o2, const Point& o3) { return (o1 ^ (o2*o3)); }
+template<typename T>
+__host__ __device__ inline double tripleprod(const Point3D<T>& o1, const Point3D<T>& o2, const Point3D<T>& o3) { return (o1 ^ (o2*o3)); }
 
-__host__ __device__ Point intTrAn(const Point &p0, const Triangle &t) {
-	Point res;
+template<typename T>
+__host__ __device__ Point intTrAn(const Point3D<T> &p0, const Triangle<T> &t) {
+	Point3D<T> res;
 
-	const Point a1 = t.p1 - p0;
-	const Point a2 = t.p2 - p0;
-	const Point a3 = t.p3 - p0;
-	const double a1m = a1.eqNorm();
-	const double a2m = a2.eqNorm();
-	const double a3m = a3.eqNorm();
-	const Point a12 = t.p2 - t.p1;
-	const Point a23 = t.p3 - t.p2;
-	const Point a31 = t.p1 - t.p3;
-	const double a12m = a12.eqNorm();
-	const double a23m = a23.eqNorm();
-	const double a31m = a31.eqNorm();
+	const Point3D<T> a1 = t.p1 - p0;
+	const Point3D<T> a2 = t.p2 - p0;
+	const Point3D<T> a3 = t.p3 - p0;
+	const T a1m = a1.eqNorm();
+	const T a2m = a2.eqNorm();
+	const T a3m = a3.eqNorm();
+	const Point3D<T> a12 = t.p2 - t.p1;
+	const Point3D<T> a23 = t.p3 - t.p2;
+	const Point3D<T> a31 = t.p1 - t.p3;
+	const T a12m = a12.eqNorm();
+	const T a23m = a23.eqNorm();
+	const T a31m = a31.eqNorm();
 	//if (a3m + a1m - a31m < 1e-9 || a1m + a2m - a12m < 1e-9 || a2m + a3m - a23m < 1e-9) return{ HUGE_VAL, HUGE_VAL, HUGE_VAL };
-	const Point N = t.normal();
+	const Point3D<T> N = t.normal();
 
 	res = a31*(log((a3m + a1m + a31m) / (a3m + a1m - a31m)) / a31m);
 	res += a12*(log((a1m + a2m + a12m) / (a1m + a2m - a12m)) / a12m);
@@ -43,23 +45,26 @@ __host__ __device__ Point intTrAn(const Point &p0, const Triangle &t) {
 	res = N*res;
 	res += N*(2.0*atan2(tripleprod(a1, a2, a3), (a1m*a2m*a3m + a3m*(a1^a2) + a2m*(a1^a3) + a1m*(a2^a3))));
 
-	return res;
+	//return res;
+	return Point(res);
 }
 
 Point intHexTr__(const Point &p0, const HexahedronWid &h) {
 	Point sum;
 	for (int i = 0; i < 12; ++i) {
 		const auto tri = h.getTri(i);
-		sum += intTrAn(p0, tri) * (tri.normal() ^ h.dens);
+		sum += intTrAn<double>(p0, tri) * (tri.normal() ^ h.dens);
 	}
 	return sum;
 }
 
 __host__ __device__ Point intHexTr(const Point &p0, const HexahedronWid &h) {
-	Point sum;
+	Point3D<float> sum;
+	const Point3D<float> p0f(p0);
+	const Point3D<float> densf(h.dens);
 	for (int i = 0; i < 12; ++i) {
-		const auto tri = h.getTri(i);//getTriSafeZ(i);
-		sum += intTrAn(p0, tri) * (tri.normal() ^ h.dens);
+		const Triangle<float> tri(h.getTri(i));
+		sum += intTrAn<float>(p0f, tri) * (tri.normal() ^ densf);
 	}
 	return sum;
 }

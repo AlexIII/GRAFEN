@@ -18,6 +18,7 @@
 #include "Grid/Grid.h"
 #include <algorithm>
 #include <array>
+#include <type_traits>
 
 using std::abs;
 using std::sqrt;
@@ -110,64 +111,71 @@ public:
 	}
 };
 
-class Point {
+template<typename T>
+class Point3D {
 public:
-	double x;
-	double y;
-	double z;
+	T x;
+	T y;
+	T z;
 	
-	CUDA_HOST_DEV_FUN Point(const double x, const double y, const double z) : x(x), y(y), z(z) {}
-	CUDA_HOST_DEV_FUN Point(const double v) : Point(v, v, v) {}
-	CUDA_HOST_DEV_FUN Point() : Point(0) {}
-	CUDA_HOST_DEV_FUN Point(const Point2D &p, const double z = 0) : Point(p.x, p.y, z) {}
+	CUDA_HOST_DEV_FUN Point3D(const T x, const T y, const T z) : x(x), y(y), z(z) {}
+	CUDA_HOST_DEV_FUN Point3D(const T v) : Point3D(v, v, v) {}
+	CUDA_HOST_DEV_FUN Point3D() : Point3D(0) {}
+	CUDA_HOST_DEV_FUN Point3D(const Point2D &p, const T z = 0) : Point3D(p.x, p.y, z) {}
+	template<typename Point3DLike,
+    	typename = std::enable_if_t<std::is_class<Point3DLike>::value>>	//this constructor only for when Point3DLike is a class
+	CUDA_HOST_DEV_FUN Point3D(const Point3DLike& p) : x(p.x), y(p.y), z(p.z) {}
+	
 	CUDA_HOST_DEV_FUN operator Point2D() const {
 		return { x, y };
 	}
-	CUDA_HOST_DEV_FUN Point operator-() const {
+	CUDA_HOST_DEV_FUN Point3D operator-() const {
 		return { -x, -y, -z };
 	}
-	CUDA_HOST_DEV_FUN Point operator-(const Point& p) const {
+	CUDA_HOST_DEV_FUN Point3D operator-(const Point3D& p) const {
 		return {x-p.x, y-p.y, z-p.z};
 	}
 	CUDA_HOST_DEV_FUN Point2D operator-(const Point2D& p) const {
 		return { x - p.x, y - p.y};
 	}
-	CUDA_HOST_DEV_FUN Point operator+(const Point& p) const {
+	CUDA_HOST_DEV_FUN Point3D operator+(const Point3D& p) const {
 		return {x+p.x, y+p.y, z+p.z};
 	}
-	CUDA_HOST_DEV_FUN const Point& operator+=(const Point& p) {
+	CUDA_HOST_DEV_FUN const Point3D& operator+=(const Point3D& p) {
 		*this = *this + p;
 		return *this;
 	}
-	CUDA_HOST_DEV_FUN Point operator*(const Point& p) const { //vector mul, right basis
-		const double xt = y*p.z - z*p.y;
-		const double yt = z*p.x - x*p.z;
-		const double zt = x*p.y - y*p.x;
+	CUDA_HOST_DEV_FUN Point3D operator*(const Point3D& p) const { //vector mul, right basis
+		const T xt = y*p.z - z*p.y;
+		const T yt = z*p.x - x*p.z;
+		const T zt = x*p.y - y*p.x;
 		return {xt,yt,zt};
 	}
-	CUDA_HOST_DEV_FUN Point operator*(const double a) const {
+	CUDA_HOST_DEV_FUN Point3D operator*(const T a) const {
 		return {x*a, y*a, z*a};
 	}
-	CUDA_HOST_DEV_FUN double operator^(const Point& p) const { //scalar mul
+	CUDA_HOST_DEV_FUN T operator^(const Point3D& p) const { //scalar mul
 		return x*p.x + y*p.y + z*p.z;
 	}
-	CUDA_HOST_DEV_FUN Point operator/(const double a) const {
+	CUDA_HOST_DEV_FUN Point3D operator/(const T a) const {
 		return {x/a, y/a, z/a};
 	}
-	CUDA_HOST_DEV_FUN Point norm() const { //norm vector
-		const double tmp = eqNorm();
+	CUDA_HOST_DEV_FUN Point3D norm() const { //norm vector
+		const T tmp = eqNorm();
 		return {x/tmp, y/tmp, z/tmp};
 	}
-	CUDA_HOST_DEV_FUN double eqNorm() const {
+	CUDA_HOST_DEV_FUN T eqNorm() const {
 		return sqrt(x*x + y*y + z*z);
 	}
-	CUDA_HOST_DEV_FUN bool operator==(const Point &p) const {
+	CUDA_HOST_DEV_FUN bool operator==(const Point3D &p) const {
 		return x == p.x && y == p.y && z == p.z;
 	}
-	CUDA_HOST_DEV_FUN bool operator!=(const Point &p) const {
+	CUDA_HOST_DEV_FUN bool operator!=(const Point3D &p) const {
 		return !(*this == p);
 	}
 };
+
+using Point = Point3D<double>;
 
 template<typename VALTYPE>
 class PointValue : public Point {
@@ -190,52 +198,60 @@ public:
 	}
 };
 
+template<typename T>
 class Triangle {
 public:
-	Point p1;
-	Point p2;
-	Point p3;
+	Point3D<T> p1;
+	Point3D<T> p2;
+	Point3D<T> p3;
 
 	CUDA_HOST_DEV_FUN Triangle() {}
-	CUDA_HOST_DEV_FUN Triangle(const Point a, const Point b, const Point c) : p1(a), p2(b), p3(c) {}
+	CUDA_HOST_DEV_FUN Triangle(const Point3D<T> a, const Point3D<T> b, const Point3D<T> c) : p1(a), p2(b), p3(c) {}
+	
+	template<typename TriangleLike,
+    	typename = std::enable_if_t<std::is_class<TriangleLike>::value>>	//this constructor only for when TriangleLike is a class
+	CUDA_HOST_DEV_FUN Triangle(const TriangleLike& t) : Triangle(t.p1, t.p2, t.p3) {}
 
-	CUDA_HOST_DEV_FUN Point convert(const double u, const double v) const {
-		const double x = p1.x + (p3.x-p1.x)*u + (p2.x-p1.x)*v;
-		const double y = p1.y + (p3.y-p1.y)*u + (p2.y-p1.y)*v;
-		const double z = p1.z + (p3.z-p1.z)*u + (p2.z-p1.z)*v;
+	CUDA_HOST_DEV_FUN Point3D<T> convert(const T u, const T v) const {
+		const T x = p1.x + (p3.x-p1.x)*u + (p2.x-p1.x)*v;
+		const T y = p1.y + (p3.y-p1.y)*u + (p2.y-p1.y)*v;
+		const T z = p1.z + (p3.z-p1.z)*u + (p2.z-p1.z)*v;
 		return {x,y,z};
 	}
 
-	CUDA_HOST_DEV_FUN double intDeform() const {
-		const double E = (p3.x-p1.x)*(p3.x-p1.x) + (p3.y-p1.y)*(p3.y-p1.y) + (p3.z-p1.z)*(p3.z-p1.z);
-		const double F = (p3.x-p1.x)*(p2.x-p1.x) + (p3.y-p1.y)*(p2.y-p1.y) + (p3.z-p1.z)*(p2.z-p1.z);
-		const double G = (p2.x-p1.x)*(p2.x-p1.x) + (p2.y-p1.y)*(p2.y-p1.y) + (p2.z-p1.z)*(p2.z-p1.z);
+	CUDA_HOST_DEV_FUN T intDeform() const {
+		const T E = (p3.x-p1.x)*(p3.x-p1.x) + (p3.y-p1.y)*(p3.y-p1.y) + (p3.z-p1.z)*(p3.z-p1.z);
+		const T F = (p3.x-p1.x)*(p2.x-p1.x) + (p3.y-p1.y)*(p2.y-p1.y) + (p3.z-p1.z)*(p2.z-p1.z);
+		const T G = (p2.x-p1.x)*(p2.x-p1.x) + (p2.y-p1.y)*(p2.y-p1.y) + (p2.z-p1.z)*(p2.z-p1.z);
 		return sqrt(E*G-F*F);
 	}
 
-	CUDA_HOST_DEV_FUN static bool check(const Triangle t) {
+	CUDA_HOST_DEV_FUN static bool check(const Triangle& t) {
 		return t.p1.eqNorm() + t.p2.eqNorm() >= t.p3.eqNorm() &&
 				t.p2.eqNorm() + t.p3.eqNorm() >= t.p1.eqNorm() &&
 				t.p1.eqNorm() + t.p3.eqNorm() >= t.p2.eqNorm();
 	}
 
-	CUDA_HOST_DEV_FUN Point normal() const {
-		const Point vp = (p2-p1)*(p3-p1);
-		return vp.norm();
+	CUDA_HOST_DEV_FUN Point3D<T> normal() const {
+		return ((p2-p1)*(p3-p1)).norm();
 	}
 
-	bool getSide(const Point& p) const {
-		const double	xx1 = p.x - p1.x, yy1 = p.y - p1.y, zz1 = p.z - p1.z,
+	bool getSide(const Point3D<T>& p) const {
+		const T	xx1 = p.x - p1.x, yy1 = p.y - p1.y, zz1 = p.z - p1.z,
 						xx2 = p.x - p2.x, yy2 = p.y - p2.y, zz2 = p.z - p2.z,
 						xx3 = p.x - p3.x, yy3 = p.y - p3.y, zz3 = p.z - p3.z;
-		const auto& minor = [](const double a, const double b, const double c, const double d) {
+		const auto& minor = [](const T a, const T b, const T c, const T d) {
 			return a*d - b*c;
 		};
 		return (xx1*minor(yy2, zz2, yy3, zz3) - yy1*minor(xx2, zz2, xx3, zz3) + zz1*minor(xx2, yy2, xx3, yy3)) > 0;
 	}
-
-	friend std::ostream& operator<<(std::ostream& os, const Triangle& q);
 };
+
+template<typename T>
+std::ostream& operator<<(std::ostream& os, const Triangle<T>& q) {
+	os << q.p1 << ", " << q.p2 << ", " << q.p3;
+	return os;
+}
 
 class Quadrangle {
 public:
@@ -252,10 +268,10 @@ public:
 		return vp.norm();
 	}
 	friend std::ostream& operator<<(std::ostream& os, const Quadrangle& p);
-	Triangle getT1() const {
+	Triangle<double> getT1() const {
 		return { p1, p2, p3 };
 	}
-	Triangle getT2() const {
+	Triangle<double> getT2() const {
 		return { p1, p3, p4 };
 	}
 	Point center() const {
@@ -278,7 +294,7 @@ class Tetrahedron {
 public:
 	Tetrahedron(const Point p, const Point b1, const Point b2, const Point b3) : p(p), base(b1, b2, b3) {}
 	Point p;
-	Triangle base;
+	Triangle<double> base;
 	double volume() const {
 		return abs((base.p2 - base.p1)*(base.p3 - base.p2)^(p - base.p1) / 6.);
 	}
@@ -373,7 +389,7 @@ public:
 		return qrs;
 	}
 
-	std::vector<Triangle> splitFaces() const {
+	std::vector<Triangle<double>> splitFaces() const {
 		return {
 			Triangle(p[2], p[3], p[1]),
 			Triangle(p[0], p[4], p[6]),
@@ -489,7 +505,7 @@ public:
 		}
 	}
 	*/
-	CUDA_HOST_DEV_FUN Triangle getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
+	CUDA_HOST_DEV_FUN Triangle<double> getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
 		switch(i) {
 			//upper plane
 			case 0:
@@ -531,7 +547,7 @@ public:
 					else return Triangle(p[4], p[7], p[6]);
 				}
 
-			default: return Triangle();
+			default: return Triangle<double>{};
 		}
 	}
 	
@@ -651,7 +667,6 @@ double toDeg(const double a);
 
 std::ostream& operator<<(std::ostream& os, const limits& l);
 std::ostream& operator<<(std::ostream& os, const Point& p);
-std::ostream& operator<<(std::ostream& os, const Triangle& q);
 std::ostream& operator<<(std::ostream& os, const Quadrangle& q);
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const PointValue<T>& p) {

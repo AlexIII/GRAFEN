@@ -23,10 +23,6 @@ std::ostream& operator<<(std::ostream& os, const Point& p) {
 	os << p.x << " " << p.y << " " << p.z;
 	return os;
 }
-std::ostream& operator<<(std::ostream& os, const Triangle& q) {
-	os << q.p1 << ", " << q.p2 << ", " << q.p3;
-	return os;
-}
 std::ostream& operator<<(std::ostream& os, const Quadrangle& q) {
 	os << q.p1 << ", " << q.p2 << ", " << q.p3 << ", " << q.p4;
 	return os;
