@@ -215,8 +215,8 @@ public:
 	gFieldCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend, const double dotPotentialRad, 
 			const int tirBufSz) : gFieldCUDAsolver(qbegin, qend), dotPotentialRad(dotPotentialRad) {
 		qsCUDAprec.resize(tirBufSz);
-		std::vector<std::array<MagLine, 3>> tmp(qend - qbegin);
-		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getLines(); });
+		std::vector<std::array<MagLine<float>, 3>> tmp(qend - qbegin);
+		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.template getLines<float>(); });
 		linesCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
 
@@ -232,10 +232,11 @@ public:
 		int* const cnt = &triSz;	//precise elemets counter
 		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
+		const Point3D<float> p0f = p0;
 		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), linesCUDA.begin(), Point(), thrust::plus<Point>(),
-			[=] __device__(const HexahedronWid& h, const std::array<MagLine, 3> &ml)->Point {
-			if ((ml[0].p1 - p0).eqNorm() > rad)
-				return ml[0].Hfield(p0) + ml[1].Hfield(p0) + ml[2].Hfield(p0);
+			[=] __device__(const HexahedronWid& h, const std::array<MagLine<float>, 3> &ml) -> Point {
+			if ((ml[0].p1 - p0f).eqNorm() > rad)
+				return ml[0].Hfield(p0f) + ml[1].Hfield(p0f) + ml[2].Hfield(p0f);
 			hPres[atomicAdd(cnt, 1)] = h;
 			return Point();
 		});
@@ -249,7 +250,7 @@ public:
 	}
 
 private:
-	thrust::device_vector<std::array<MagLine, 3>> linesCUDA;		//ro
+	thrust::device_vector<std::array<MagLine<float>, 3>> linesCUDA;		//ro
 	dvHex qsCUDAprec;										//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;

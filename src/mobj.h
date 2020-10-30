@@ -321,19 +321,20 @@ public:
 	}
 };
 
+template<typename T, typename VT = T>
 class MagLine {
 public:
-	Point p1;
-	Point p2;
-	double mA; //magnetic-mass amplitude
-	CUDA_HOST_DEV_FUN Point Hfield(const Point& p) const {
-		const Point d1 = p1 - p, d2 = p2 - p;
-		const double aNorm = (p2 - p1).eqNorm();
-		const double d1s = d1^d1, d2s = d2^d2;
+	Point3D<T> p1;
+	Point3D<T> p2;
+	VT mA; //magnetic-mass amplitude
+	CUDA_HOST_DEV_FUN Point3D<T> Hfield(const Point3D<T>& p) const {
+		const Point3D<T> d1 = p1 - p, d2 = p2 - p;
+		const T aNorm = (p2 - p1).eqNorm();
+		const T d1s = d1^d1, d2s = d2^d2;
 		return (d2 / sqrt(d2s*d2s*d2s) - d1 / sqrt(d1s*d1s*d1s))
 			* (mA / aNorm);
 	}
-	Point a() const {
+	Point3D<T> a() const {
 		return p2 - p1;
 	}
 };
@@ -439,9 +440,10 @@ public:
 		return PointValue<decltype(dens)>(massCenter(), dens*volume());
 	}
 
-	std::array<MagLine, 3> getLines() const {
+	template<typename MagLineT>
+	std::array<MagLine<MagLineT>, 3> getLines() const {
 		std::array<int, 3> n{0, 1, 3};
-		std::array<MagLine, 3> res;
+		std::array<MagLine<MagLineT>, 3> res;
 		const std::vector<Quadrangle> qrs = splitQr();
 		for (int cnt = 0; cnt < 3; ++cnt) {
 			const int i = n[cnt];
