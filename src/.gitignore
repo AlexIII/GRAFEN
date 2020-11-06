@@ -5,3 +5,4 @@ x64
 *.o
 grafen_rocm
 *.hip.*
+grafen_cuda

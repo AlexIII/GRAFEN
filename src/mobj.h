@@ -392,12 +392,12 @@ public:
 
 	std::vector<Triangle<double>> splitFaces() const {
 		return {
-			Triangle(p[2], p[3], p[1]),
-			Triangle(p[0], p[4], p[6]),
-			Triangle(p[3], p[7], p[5]),
-			Triangle(p[0], p[1], p[5]),
-			Triangle(p[6], p[7], p[3]),
-			Triangle(p[4], p[5], p[7])
+			Triangle<double>(p[2], p[3], p[1]),
+			Triangle<double>(p[0], p[4], p[6]),
+			Triangle<double>(p[3], p[7], p[5]),
+			Triangle<double>(p[0], p[1], p[5]),
+			Triangle<double>(p[6], p[7], p[3]),
+			Triangle<double>(p[4], p[5], p[7])
 		};
 	}
 

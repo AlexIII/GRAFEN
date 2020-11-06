@@ -9,19 +9,19 @@
 #include <mutex>
 #include <array>
 
+using KernelComputeType = double; //float;
+
 using std::cout;
 using std::endl;
 
-#define BLOCK_SZ 32
-#define MAX_DEV 16
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value)
 
 template<typename T>
-__host__ __device__ inline double tripleprod(const Point3D<T>& o1, const Point3D<T>& o2, const Point3D<T>& o3) { return (o1 ^ (o2*o3)); }
+__host__ __device__ static inline double tripleprod(const Point3D<T>& o1, const Point3D<T>& o2, const Point3D<T>& o3) { return (o1 ^ (o2*o3)); }
 
 template<typename T>
-__host__ __device__ Point intTrAn(const Point3D<T> &p0, const Triangle<T> &t) {
+__host__ __device__ static Point intTrAn(const Point3D<T> &p0, const Triangle<T> &t) {
 	Point3D<T> res;
 
 	const Point3D<T> a1 = t.p1 - p0;
@@ -58,42 +58,18 @@ Point intHexTr__(const Point &p0, const HexahedronWid &h) {
 	return sum;
 }
 
-__host__ __device__ Point intHexTr(const Point &p0, const HexahedronWid &h) {
-	Point3D<float> sum;
-	const Point3D<float> p0f(p0);
-	const Point3D<float> densf(h.dens);
+template<typename T>
+__host__ __device__ static Point intHexTr(const Point &p0, const HexahedronWid &h) {
+	Point3D<T> sum;
+	const Point3D<T> p0f(p0);
+	const Point3D<T> densf(h.dens);
 	for (int i = 0; i < 12; ++i) {
-		const Triangle<float> tri(h.getTri(i));
-		sum += intTrAn<float>(p0f, tri) * (tri.normal() ^ densf);
+		const Triangle<T> tri(h.getTri(i));
+		sum += intTrAn<T>(p0f, tri) * (tri.normal() ^ densf);
 	}
 	return sum;
 }
 
-__host__ __device__ Point mMassPoint(const Point &r, const Point &m) {
-	const double d = r.eqNorm();
-	return r * 3 * (r^m) / (d*d*d*d*d) - m / (d*d*d);
-}
-/*
-__host__ __device__ Point lineField(const Point &p0, const MagLine &l) {
-	const Point d1 = l.p1 - p0, d2 = l.p2 - p0;
-	const double aNorm = (l.p2 - l.p1).eqNorm();
-	const Point D1 = d1 / d1.eqNorm(), D2 = d2 / d2.eqNorm();
-	const double q = 1. + (D1^D1);
-	const double d1Norm = d1.eqNorm(), d2Norm = d2.eqNorm();
-	const double mul = aNorm / (d1Norm*d2Norm*q), fs = 1 / d1Norm + 1 / d2Norm;
-
-	const auto &U = [=] __host__ __device__ (const double D1i, const double D1j, const double D2i, const double D2j, const double k) -> double{
-		return mul * (fs* (1/q * (D1i+D2i) * (D1j + D2j) - k) 
-			+ 1/d1Norm*D1i*D1j + 1 / d2Norm*D2i*D2j);
-	};
-
-	const double x = Point{ U(D1.x, D1.x, D2.x, D2.x, 1), U(D1.x, D1.y, D2.x, D2.y, 0), U(D1.x, D1.z, D2.x, D2.z, 0) } ^ l.val;
-	const double y = Point{ U(D1.y, D1.x, D2.y, D2.x, 0), U(D1.y, D1.y, D2.y, D2.y, 1), U(D1.y, D1.z, D2.y, D2.z, 0) } ^ l.val;
-	const double z = Point{ U(D1.z, D1.x, D2.z, D2.x, 0), U(D1.z, D1.y, D2.z, D2.y, 0), U(D1.z, D1.z, D2.z, D2.z, 1) } ^ l.val;
-
-	return Point{ x,y,z } *1 / (4.*M_PI);
-}
-*/
 bool cuSolver::isCUDAavailable() {
 	int deviceCount;
 	cudaError_t e = cudaGetDeviceCount(&deviceCount);
@@ -197,7 +173,7 @@ public:
 	static Point solve(const dvHex::const_iterator &qbegin, const dvHex::const_iterator &qend, const Point &p0) {
 		Point res;
 		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->Point {
-			return intHexTr(p0, h);
+			return intHexTr<KernelComputeType>(p0, h);
 		};
 		const auto& triClac = [&](const auto &execPol) {
 			return thrust::transform_reduce(execPol, qbegin, qend, triKr, Point(), thrust::plus<Point>());
@@ -215,8 +191,8 @@ public:
 	gFieldCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend, const double dotPotentialRad, 
 			const int tirBufSz) : gFieldCUDAsolver(qbegin, qend), dotPotentialRad(dotPotentialRad) {
 		qsCUDAprec.resize(tirBufSz);
-		std::vector<std::array<MagLine<float>, 3>> tmp(qend - qbegin);
-		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.template getLines<float>(); });
+		std::vector<std::array<MagLine<KernelComputeType>, 3>> tmp(qend - qbegin);
+		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.template getLines<KernelComputeType>(); });
 		linesCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 	}
 
@@ -232,9 +208,9 @@ public:
 		int* const cnt = &triSz;	//precise elemets counter
 		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
-		const Point3D<float> p0f = p0;
+		const Point3D<KernelComputeType> p0f = p0;
 		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), linesCUDA.begin(), Point(), thrust::plus<Point>(),
-			[=] __device__(const HexahedronWid& h, const std::array<MagLine<float>, 3> &ml) -> Point {
+			[=] __device__(const HexahedronWid& h, const std::array<MagLine<KernelComputeType>, 3> &ml) -> Point {
 			if ((ml[0].p1 - p0f).eqNorm() > rad)
 				return ml[0].Hfield(p0f) + ml[1].Hfield(p0f) + ml[2].Hfield(p0f);
 			hPres[atomicAdd(cnt, 1)] = h;
@@ -250,7 +226,7 @@ public:
 	}
 
 private:
-	thrust::device_vector<std::array<MagLine<float>, 3>> linesCUDA;		//ro
+	thrust::device_vector<std::array<MagLine<KernelComputeType>, 3>> linesCUDA;		//ro
 	dvHex qsCUDAprec;										//rw
 	cuVar<int> triSz;										//rw
 	const double dotPotentialRad;
