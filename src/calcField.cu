@@ -9,7 +9,7 @@
 #include <mutex>
 #include <array>
 
-using KernelComputeType = double; //float;
+using KernelComputeType = float;
 
 using std::cout;
 using std::endl;

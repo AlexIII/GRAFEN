@@ -360,7 +360,9 @@ public:
 		//const limits fieldDim = { 0, 8.1, 60 };
 		//calcDemag(wellModelGenerator, fieldDim, fieldDim, H, "well");
 
-		Volume cubeVolume{ { -20, 20, 1 },{ -20, 20, 1 },{ 0, -4, 1 } };
+		// Volume cubeVolume{ { -20, 20, 160 },{ -20, 20, 160 },{ 0, -4, 16 } }; //cube "A"
+		Volume cubeVolume{ { -2, 2, 50 },{ -1, 1, 25 },{ 0, -2, 25 } }; //cube "B" 2:1
+		// Volume cubeVolume{ { -2, 2, 50*21 },{ -1./21., 1./21., 25 },{ 0, -2./21., 25 } }; //cube "B" 10:1
 		if(inp.exists("xn")) inp["xn"] >> cubeVolume.x.n;
 		if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
 		if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
@@ -502,7 +504,7 @@ private:
 		};
 
 		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
-		const auto& residualEqAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
+		const auto residualEqAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
 			double sum = 0;
 			for (int i = 0; i < res.size(); ++i) {
 				const Point v = res[i] - hsi[i].dens;
@@ -511,7 +513,7 @@ private:
 			}
 			return sqrt(sum);
 		};
-		const auto& residualMaxAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
+		const auto residualMaxAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
 			double maxDiff = 0;
 			for (int i = 0; i < res.size(); ++i) {
 				const Point v = res[i] - hsi[i].dens;
@@ -522,8 +524,7 @@ private:
 		};
 
 
-		const auto &expJ = [&hsi, &v](const string fname) {	//dump J of upper layer
-			const int layerIdx = 0;
+		const auto expJ = [&hsi, &v](const string& fname, const int layerIdx = 0) {	//dump J (magnetization)
 			Field x{ v.x, v.y }, y{ x }, z{ x };
 			for (int i = 0; i < v.y.n; ++i) {
 				for (int j = 0; j < v.x.n; ++j) {
@@ -537,7 +538,11 @@ private:
 			x.toGrid().Write(fname + "_x.grd");
 			y.toGrid().Write(fname + "_y.grd");
 			z.toGrid().Write(fname + "_z.grd");
-			cout << "expJ() done." << endl;
+			//cout << "expJ() done." << endl;
+		};
+		const auto expJall = [&expJ, &v](const string& fname) {
+			for(int zi = 0; zi < v.z.n; ++zi)
+				expJ(fname + "_" + std::to_string(zi), zi);	
 		};
 
 		
@@ -558,9 +563,9 @@ private:
 
 		//Only Root will continue from here
 
-		expJ(filePrefix + "J0");
+		expJall("J0/" + filePrefix + "J0");
 		//fInWell("inWell0.dat");
-		fOn(filePrefix + "Field0");
+		//fOn(filePrefix + "Field0");
 		cout << "No demag solving done" << endl;
 
 		//end here
@@ -600,12 +605,28 @@ private:
 		bool cont = false;
 		Bcast(cont);
 
-		expJ(filePrefix + "Jn");
-		fOn(filePrefix + "Field");
-		//fInWell("inWell.dat");
+		const auto expJdiff = [&expJall, &v](const string& filePrefix) {
+			expJall("Jn/" + filePrefix + "Jn");
 
-		(Grid(filePrefix + "J0_x.grd") - Grid(filePrefix + "Jn_x.grd")).Write(filePrefix + "_dJ_x.grd");
-		(Grid(filePrefix + "J0_z.grd") - Grid(filePrefix + "Jn_z.grd")).Write(filePrefix + "_dJ_z.grd");
+			const auto gridDiff3d = [](const string& base1, const string& base2, const string& baseDest) {
+				const auto diff1d = [&](const string& axis) {
+					(Grid(base1 + "_" + axis + ".grd") - Grid(base2 + "_" + axis + ".grd")).Write(baseDest + "_" + axis + ".grd");
+				};
+				diff1d("x");
+				diff1d("y");
+				diff1d("z");
+			};
+			for(int zi = 0; zi < v.z.n; ++zi)
+				gridDiff3d(
+					"Jn/" + filePrefix + "Jn" + "_" + std::to_string(zi), 
+					"J0/" + filePrefix + "J0" + "_" + std::to_string(zi), 
+					"Jn_J0_diff/" + filePrefix + "Jn_J0_diff" + "_" + std::to_string(zi)
+				);
+		};
+
+		expJdiff(filePrefix);
+		//fOn(filePrefix + "Field");
+		//fInWell("inWell.dat");
 
 
 		cout << "Master Done." << endl;
