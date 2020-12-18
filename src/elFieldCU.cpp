@@ -220,8 +220,8 @@ void cubeGen(const Volume &v, const Point J, vector<HexahedronWid, VAlloc> &hsi)
 
 				const int ind = (zi*v.y.n + yi)*v.x.n + xi;
 				hsi[ind] = Hexahedron{
-					cur + Point{0, 0, v.z.at(zi)},
 					cur + Point{0, 0, v.z.at(zi + 1)},
+					cur + Point{0, 0, v.z.at(zi)},
 					J };
 			}	
 }
@@ -280,16 +280,22 @@ public:
 Point intHexTr__(const Point &p0, const HexahedronWid &h);
 
 void hexTest() {
+	// Hexahedron h({
+	// 	{ 20, 20, 0 },{ 20, -20, 0 },{ -20, 20, 0 },{ -20, -20, 0 },
+	// 	{ 20, 20, -4 },{ 20, -20, -4 },{ -20, 20, -4 },{ -20, -20, -4 }
+	// }, Point{ 14, 14, 35 }*0.2);
+
 	Hexahedron h({
-		{ 20, 20, 0 },{ 20, -20, 0 },{ -20, 20, 0 },{ -20, -20, 0 },
-		{ 20, 20, -4 },{ 20, -20, -4 },{ -20, 20, -4 },{ -20, -20, -4 }
-	}, Point{ 14, 14, 35 }*0.2);
+		{ 2, 1, 0 },{ 2, -1, 0 },{ -2, 1, 0 },{ -2, -1, 0 },
+		{ 2, 1, -2 },{ 2, -1, -2 },{ -2, 1, -2 },{ -2, -1, -2 }
+	}, Point{ 14, 14, 35 }*0.02);
+
 	auto hw = HexahedronWid(h);
-	double H = -0.25;
+	const double H = -0.25;
 
 
 	cout << "Solving..." << endl;
-	Dat2D<Point> dat;
+	Dat3D<Point> dat;
 	auto l = limits{ -25 + 0.00001, 25 + 0.00001, 40 };
 	for (double i = 0; i < l.n; ++i) {
 		for (int j = 0; j < l.n; ++j) {
@@ -297,10 +303,10 @@ void hexTest() {
 			const Point res = (-intHexTr__(p0, hw)
 					 + (h.isIn(p0)? h.dens * (4.*M_PI / 3.) : Point())
 				) / (4 * M_PI);
-			dat.es.push_back({ { p0.x, p0.y }, res });
+			dat.es.push_back({ { p0.x, p0.y, p0.z }, res });
 		}
 	}
-
+	
 	dat.write("cubeFieldSZ_IN.dat");
 	cout << "Done." << endl;
 }
@@ -322,6 +328,11 @@ public:
 	}
 
 	void run(int argc, char *argv[]) {
+/*
+		if(isRoot()) {
+			hexTest();
+		}
+*/
 		InputParser inp(argc, argv);
 		
 		double H = 0.25;
@@ -361,15 +372,19 @@ public:
 		//calcDemag(wellModelGenerator, fieldDim, fieldDim, H, "well");
 
 		// Volume cubeVolume{ { -20, 20, 160 },{ -20, 20, 160 },{ 0, -4, 16 } }; //cube "A"
-		Volume cubeVolume{ { -2, 2, 50 },{ -1, 1, 25 },{ 0, -2, 25 } }; //cube "B" 2:1
-		// Volume cubeVolume{ { -2, 2, 50*21 },{ -1./21., 1./21., 25 },{ 0, -2./21., 25 } }; //cube "B" 10:1
+		// Volume cubeVolume{ { -2, 2, 50 },{ -1, 1, 25 },{ -2, 0, 25 } }; //cube "B" 2:1 - 4x2x2
+
+		const int ratio = 2; //x2
+		Volume cubeVolume{ { -2, 2, 25*ratio },{ -2./double(ratio), 2./double(ratio), 25 },{ -4./double(ratio), 0, 25 } }; //cube "B"
+
 		if(inp.exists("xn")) inp["xn"] >> cubeVolume.x.n;
 		if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
 		if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
 
 		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel) {
 			const double K = 0.02;
-			const Point Hprime = { 14, 14, 35 }; //~40A/m
+			//const Point Hprime = { 14, 14, 35 }; //~40A/m
+			const Point Hprime = { 0, 0, 50 }; //~40A/m
 
 			cubeGen(cubeVolume, (Hprime*K), hsi);
 			Kmodel.assign(hsi.size(), K);
@@ -408,11 +423,11 @@ private:
 		const auto createCudaSolver = [&DPR](const vector<HexahedronWid>& hsi) {
 			return	DPR < 0
 				? gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend())
-				: gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), DPR, hsi.size())\
+				: gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), DPR, hsi.size())
 			;
 		};
 
-		const auto &fOnDat = [&createCudaSolver, &hsi, &H, &fieldDimX, &fieldDimY](Dat3D<Point> &res) {
+		const auto &fOnDat = [&](Dat3D<Point> &res) {
 			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
 			
 			for (auto &i : res)
@@ -430,6 +445,12 @@ private:
 
 			return cnt;
 		};
+/*
+		Dat3D<Point> dd("cubeFieldSZ_IN.dat");
+		fOnDat(dd);
+		dd.write("cubeFieldSZ_IN_DESC.dat");
+		return;
+*/
 /*
 		const auto &fInWell = [&v, &well, &fOnDat](const string fname) {
 			Dat3D<Point> dat;
@@ -486,8 +507,7 @@ private:
 						result[i] = solver->solve(task[i]);
 					pool.submit(result);
 				}
-			}
-			else {
+			} else {
 				cout << "result gather ok" << endl;
 				for (int i = 0; i < res.size(); ++i)
 					res[i] = (-res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
@@ -574,7 +594,7 @@ private:
 		
 		
 		const double eps = 1e-4;
-		const int maxIter = 10;
+		const int maxIter = 30;
 		double err = 1;
 		for (int it = 0; it < maxIter && err > eps; ++it) {
 			cout << "Iter: " << it << endl;
@@ -599,7 +619,7 @@ private:
 				return sqrt(sum);
 			}();
 			
-			cout << "Err: " << err << endl;
+			cout << "Err: " << err << " at iter: " << it << endl;
 			//fOn(filePrefix + "Field.dat");
 		}
 		bool cont = false;
@@ -610,22 +630,39 @@ private:
 
 			const auto gridDiff3d = [](const string& base1, const string& base2, const string& baseDest) {
 				const auto diff1d = [&](const string& axis) {
-					(Grid(base1 + "_" + axis + ".grd") - Grid(base2 + "_" + axis + ".grd")).Write(baseDest + "_" + axis + ".grd");
+					Grid t(base1 + "_" + axis + ".grd");
+					auto gdiff = t - Grid(base2 + "_" + axis + ".grd");
+					gdiff.Write(baseDest + "_" + axis + ".grd");
+					return std::make_tuple(gdiff.mean(), gdiff.sumOfCubes(), t.sumOfCubes());
 				};
-				diff1d("x");
-				diff1d("y");
-				diff1d("z");
+				const auto x = diff1d("x"), y = diff1d("y"), z = diff1d("z");
+				return std::make_tuple( 
+					Point{ std::get<0>(x), std::get<0>(y), std::get<0>(z) }, //mean
+					std::get<1>(x) + std::get<1>(y) + std::get<1>(z), // sum of cubes for diff
+					std::get<2>(x) + std::get<2>(y) + std::get<2>(z) // sum of cubes for total
+				);
 			};
-			for(int zi = 0; zi < v.z.n; ++zi)
-				gridDiff3d(
+
+			Point mean;
+			double sumOfCubesDiff = 0;
+			double sumOfCubesTotal = 0;
+			for(int zi = 0; zi < v.z.n; ++zi) {
+				const auto gr = gridDiff3d(
 					"Jn/" + filePrefix + "Jn" + "_" + std::to_string(zi), 
 					"J0/" + filePrefix + "J0" + "_" + std::to_string(zi), 
 					"Jn_J0_diff/" + filePrefix + "Jn_J0_diff" + "_" + std::to_string(zi)
 				);
+				mean += std::get<0>(gr);
+				sumOfCubesDiff += std::get<1>(gr);
+				sumOfCubesTotal += std::get<2>(gr);
+			}
+			return std::make_tuple( mean, sumOfCubesDiff, sumOfCubesTotal );
 		};
 
-		expJdiff(filePrefix);
-		//fOn(filePrefix + "Field");
+		const auto JdiffRes = expJdiff(filePrefix);
+		cout << "Mean Jn-J0 = " << std::get<0>(JdiffRes) << endl;
+		cout << "|Jn-J0|/|Jn| = " << std::sqrt(std::get<1>(JdiffRes)) / std::sqrt(std::get<2>(JdiffRes)) << endl;
+		fOn(filePrefix + "Field");
 		//fInWell("inWell.dat");
 
 
@@ -840,9 +877,6 @@ private:
 int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
-		//hexTest();
-		//return 0;
-
 		WellDemagCluster().run(argc, argv);
 		//wellTest(argc, argv);
 		return 0;

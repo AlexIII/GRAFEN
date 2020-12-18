@@ -82,6 +82,14 @@ public:
 		});
 		return count? mean / count : 0;
 	}
+	double sumOfCubes() const {
+		double sum = 0;
+		forEach([&BlankValue = BlankValue, &sum](int, int, const double &v) {
+			if (v == BlankValue) return;
+			sum += v * v;
+		});
+		return sum;
+	}
 	void forEach(const std::function<void(int, int, double&)>& f) {
 		for (int i = 0; i < nCol; ++i)
 			for (int j = 0; j < nRow; ++j)
