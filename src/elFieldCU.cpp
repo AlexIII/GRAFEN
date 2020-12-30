@@ -214,9 +214,9 @@ void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, lim
 	};
 
 #pragma omp parallel for
-	for (int Hi = 0; Hi < Hlim.n; ++Hi)
-		for (int Ni = 0; Ni < Nlim.n; ++Ni)
-			for (int Ei = 0; Ei < Elim.n; ++Ei)
+	for (size_t Hi = 0; Hi < Hlim.n; ++Hi)
+		for (size_t Ni = 0; Ni < Nlim.n; ++Ni)
+			for (size_t Ei = 0; Ei < Elim.n; ++Ei)
 				Kr(Hi, Ni, Ei);
 
 }
@@ -471,8 +471,8 @@ int grafenMain(int argc, char *argv[]) {
 			if (cs.isRoot()) {
 				cout << "time: " << tmr.stop() << endl;
 
-				const int lsize = inp.Nlim.n*inp.Elim.n;
-				for (int i = 0; i < inp.Hlim.n; ++i) {
+				const size_t lsize = inp.Nlim.n*inp.Elim.n;
+				for (size_t i = 0; i < inp.Hlim.n; ++i) {
 					Grid g(inp.fnames[i]);
 					g.data.assign(res.cbegin() + i*lsize, res.cbegin() + (i + 1)*lsize);
 					g.Write();
@@ -535,7 +535,11 @@ int topogravMain(int argc, char *argv[]) {
 
 	try {
 		ClusterSolver cs;
-		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
+		if(cs.isRoot()) {
+			cout << "GRAFEN Topograv" << endl;
+			cout << (inp.flatMode? "FLAT" : "SPHERICAL") << " mode" << endl;
+			cout << "GPUs: " << cuSolver::getGPUnum() << endl;
+		}
 		TopogravArgs inp(argc, argv);
 		Grid topoGrid(inp.topoGridFname);
 		topoGrid.setBlanksTo(topoGrid.mean());
@@ -569,10 +573,10 @@ int topogravMain(int argc, char *argv[]) {
 		td.write("tt.dat");
 		return 0;
 		*/
-
+/*
 		saveAsDat(qss);
 		return 0;
-
+*/
 		//computation
 		Dat3D fieldDat = GDconv::toDat3D(topoGrid);
 		sectionStopwatch("Computing", [&]() {

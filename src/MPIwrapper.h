@@ -5,6 +5,8 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <cstring>
+#include <climits>
 
 #define HOSTNAME_BUFF_SZ 50
 class MPIwrapper {
@@ -28,13 +30,14 @@ public:
 		MPI_Comm_rank(comm, &myId);
 
 		//get host name
-		char hostname[50];
+		char hostname[200];
 		int len;
 		MPI_Get_processor_name(hostname, &len);
 		host = std::string(hostname);
 
 		me.id = myId;
 		strncpy(me.hostname, hostname, HOSTNAME_BUFF_SZ-1);
+		me.hostname[HOSTNAME_BUFF_SZ-1] = '\0';
 	}
 
 	virtual ~MPIwrapper() {

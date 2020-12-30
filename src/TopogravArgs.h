@@ -27,7 +27,7 @@ public:
 						// == 0 - approximate calculations
 						// > 0 - point-potential replacement radius
 	boost::optional<Point> normal; // -nx *number* -ny *number* -nz *number* 
-	double l0;			// -l0 *in deg*
+	double l0 = 0;			// -l0 *in deg*
 	bool flatMode = false;	//don't use spherical model
 
 	TopogravArgs(int argc, char *argv[]) {
@@ -35,8 +35,6 @@ public:
 		ip["topoGrd7"] >> topoGridFname;
 		ip["gravGrd7"] >> gravGridFname;
 		ip["dens"] >> dens;
-
-		ip["l0"] >> l0;
 
 		if(ip.exists("Req") && ip.exists("Rpol")) {
 			double Req, Rpol;
@@ -64,7 +62,10 @@ public:
 			normal = n;
 		}
 
-		if(ip.exists("flat")) flatMode = true;
+		if(ip.exists("flat")) {
+			ip["l0"] >> l0;
+			flatMode = true;
+		}
 	}
 };
 
