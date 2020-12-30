@@ -9,8 +9,11 @@ The program is intended to work on distributed systems with CUDA accelerators.
 *normal derivative of gravity potential
 
 
-> **Update 2020-09-04**
-> **Linux + [AMD ROCm](https://rocmdocs.amd.com/en/latest/) support**
+> **Update 2020-12-30:**
+> **[GRAFEN - TOPO](https://github.com/AlexIII/GRAFEN/tree/topo) - calculate gravity field for topography**
+
+> Update 2020-09-04:
+> Linux + [AMD ROCm](https://rocmdocs.amd.com/en/latest/) support
 
 ## Build dependencies (Windows + CUDA)
 You will need these only if you want to build the program yourself. If you just want to run the binaries, see [*How to run the example*](#how-to-run-the-example) section below.
