@@ -28,6 +28,7 @@ public:
 						// > 0 - point-potential replacement radius
 	boost::optional<Point> normal; // -nx *number* -ny *number* -nz *number* 
 	double l0;			// -l0 *in deg*
+	bool flatMode = false;	//don't use spherical model
 
 	TopogravArgs(int argc, char *argv[]) {
 		InputParser ip(argc, argv);
@@ -37,7 +38,7 @@ public:
 
 		ip["l0"] >> l0;
 
-		if (ip.exists("Req") && ip.exists("Rpol")) {
+		if(ip.exists("Req") && ip.exists("Rpol")) {
 			double Req, Rpol;
 			ip["Req"] >> Req;
 			ip["Rpol"] >> Rpol;
@@ -47,14 +48,14 @@ public:
 			cout << "Using default reference ellipsoid with Rpol=" << refEllipsoid.Rpl << " and Req=" << refEllipsoid.Req << endl;
 		}
 
-		if (ip.exists("DPR"))
+		if(ip.exists("DPR"))
 			ip["DPR"] >> pprr;
 		else {
 			//dotPotentialRad = AutoReplRadi::get(1e-3, Elim.dWh(), Nlim.dWh(), Hlim.d());
 			//cout << "Deduced dot potential replace radius: " << dotPotentialRad << endl;
 		}
 
-		if (ip.exists("nx") || ip.exists("ny") || ip.exists("nz")) {
+		if(ip.exists("nx") || ip.exists("ny") || ip.exists("nz")) {
 			Point n;
 			if (ip.exists("nx")) ip["nx"] >> n.x;
 			if (ip.exists("ny")) ip["ny"] >> n.y;
@@ -62,6 +63,8 @@ public:
 			cout << "Using specified normal: " << n << endl;
 			normal = n;
 		}
+
+		if(ip.exists("flat")) flatMode = true;
 	}
 };
 

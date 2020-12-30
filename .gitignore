@@ -1,4 +1,8 @@
 workloads
 releases
 topograv_example
+mag_example
+well_example
 deps
+.vscode
+float_test

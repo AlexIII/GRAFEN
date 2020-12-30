@@ -78,9 +78,10 @@ Point GeoToGK(const TransverseMercator &proj, const double l0, const double B, c
 	p.x = xToGK(p.x, l0);
 	return p;
 }
-
+/*
 //construct flat density model in GK from topography model (mesh nodes in degrees)
-//topo mesh in deg, height in km
+//topo - mesh in deg, height in km
+//generates prisms
 template <class VAlloc>
 void makeHexsTopoFlat(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
@@ -110,9 +111,13 @@ void makeHexsTopoFlat(const double l0, const Ellipsoid &e, const Grid &topo, con
 			hsi[yi*xN + xi] = HexahedronWid(h);
 		}
 }
+*/
 
+//construct density model from topography model (mesh nodes in degrees)
+//topo - mesh in deg, height in km
+//generates cuboids
 template <class VAlloc>
-void makeHexsTopoFlatRect(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+void makeHexsTopoFlatCuboids(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	hsi.resize(topo.nCol * topo.nRow);
 
 	const TransverseMercator proj(e.Req*1000., e.f, 1);
@@ -142,8 +147,8 @@ void makeHexsTopoFlatRect(const double l0, const Ellipsoid &e, const Grid &topo,
 		}
 }
 
-//construct density model from topography model (mesh nodes in degrees)
-//topo mesh in deg, height in km
+//construct spherical density model from topography model (mesh nodes in degrees)
+//topo - mesh in deg, height in km
 template <class VAlloc>
 void makeHexsTopo(const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
@@ -255,8 +260,8 @@ struct GeoNormOptsFlat : GKNormOpts {
 using calcFieldNodeOpts = boost::variant<GeoNormOpts, GKNormOpts, GeoNormOptsFlat>;
 
 //Calculate gravity field on a single node
-//If GKNormOpts: fp - field poinst in GK, field in the normal derection to reference ellipsoid in field point
-//If GeoNormOpts: fp - field poinst in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field in the normal derection to reference ellipsoid in field point
+//If GKNormOpts: fp - field points in GK, field in the normal derection to reference ellipsoid in field point
+//If GeoNormOpts: fp - field points in geo (E, N, H) = (l, B, H) = (lon, lat, H) = (deg, deg, km), field in the normal derection to reference ellipsoid in field point
 void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> &solver,
 	const vector<Dat3D::Point> &fp, vector<double> &result) {
 	Assert(fp.size() == result.size());
@@ -544,7 +549,11 @@ int topogravMain(int argc, char *argv[]) {
 
 		//preprocessing
 		if(cs.isLocalRoot()) 
-			sectionStopwatch("Preprocessing", [&](){ makeHexsTopoFlatRect(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss); });
+			sectionStopwatch("Preprocessing", [&](){ 
+				inp.flatMode
+					? makeHexsTopoFlatCuboids(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss)
+					: makeHexsTopo(inp.refEllipsoid, topoGrid, inp.dens, qss);
+			});
 		cs.Barrier();
 		const size_t qSize = qss.size();
 		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
@@ -570,7 +579,11 @@ int topogravMain(int argc, char *argv[]) {
 			//set approximate size of buffer
 			cs.triBufferSize = inp.pprr < 1e-6? 0 : int(qss.size() / 4);
 			//do the job
-			cs.calcField(GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal }, qss, fieldDat, inp.pprr);
+			cs.calcField(
+				inp.flatMode
+				? calcFieldNodeOpts{ GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal } }
+				: calcFieldNodeOpts{ GeoNormOpts{ inp.refEllipsoid, inp.normal } }
+			, qss, fieldDat, inp.pprr);
 		});
 
 		//save result
