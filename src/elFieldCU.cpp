@@ -34,7 +34,7 @@ using GeographicLib::TransverseMercator;
 
 #define MIN_DENS 1e-8
 
-#define MOVE_FIELD_POINT_XYZ 0 //0.00001
+#define MOVE_FIELD_POINT_XYZ 0.000001
 
 #define Assert(exp) do { if (!(exp)) throw std::runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
 
@@ -289,7 +289,10 @@ void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> 
 		void operator()(const GeoNormOpts& opts) const {
 			for (size_t i = 0; i < fp.size(); ++i) {
 				const Dat3D::Point &p = fp[i];
-				const Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
+				Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
+				p0.x += MOVE_FIELD_POINT_XYZ;
+				p0.y += MOVE_FIELD_POINT_XYZ;
+				p0.z += MOVE_FIELD_POINT_XYZ;
 				const Point n0 = opts.n ? *opts.n : opts.e.getNormal(toRad(p.y), toRad(p.x));
 				result[i] += G_CONST * solver->solve(p0, n0);
 			}
@@ -535,12 +538,12 @@ int topogravMain(int argc, char *argv[]) {
 
 	try {
 		ClusterSolver cs;
+		TopogravArgs inp(argc, argv);
 		if(cs.isRoot()) {
 			cout << "GRAFEN Topograv" << endl;
 			cout << (inp.flatMode? "FLAT" : "SPHERICAL") << " mode" << endl;
 			cout << "GPUs: " << cuSolver::getGPUnum() << endl;
 		}
-		TopogravArgs inp(argc, argv);
 		Grid topoGrid(inp.topoGridFname);
 		topoGrid.setBlanksTo(topoGrid.mean());
 

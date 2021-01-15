@@ -51,4 +51,4 @@ $(TARGET): $(OBJS_CPU) $(OBJS_HIP)
 	$(HIPCC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) -L$(GEOLIB_LIB_PATH) -lGeographic -lrt -L$(MPI_LIB_PATH) -lmpich
 
 clean:
-	rm -rf *.o $(TARGET)
+	rm -rf *.o $(TARGET) *.hip.*
