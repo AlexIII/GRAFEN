@@ -322,12 +322,13 @@ public:
 
 	SharedMemBase<gElementsShared> *sharedMem = 0;
 
-	ClusterSolver() : MPIwrapper() {
+	ClusterSolver(const vector<int> &gpuIdMap = {}) : MPIwrapper() {
 		if (gridSize < 2) throw std::runtime_error("You must run at least 2 MPI processes.");
 		if (root != 0) throw std::runtime_error("Root process must have rank = 0.");
 		const auto lid = localId();
 		const int devId = !isRoot() && std::get<1>(lid) ? std::get<0>(lid) - 1 : std::get<0>(lid);
-		cuSolver::setDevice(devId);
+		const int mappedDevId = devId < gpuIdMap.size()? gpuIdMap[devId] : devId;
+		cuSolver::setDevice(mappedDevId);
 	}
 
 	gElementsShared& initShared(const size_t size) {
@@ -537,8 +538,8 @@ int topogravMain(int argc, char *argv[]) {
 	};
 
 	try {
-		ClusterSolver cs;
 		TopogravArgs inp(argc, argv);
+		ClusterSolver cs(inp.gpuIdMap);
 		if(cs.isRoot()) {
 			cout << "GRAFEN Topograv" << endl;
 			cout << (inp.flatMode? "FLAT" : "SPHERICAL") << " mode" << endl;

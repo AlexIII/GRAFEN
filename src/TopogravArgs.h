@@ -7,6 +7,7 @@
 #include <boost/optional.hpp>
 #include "mobj.h"
 #include "inputParser.h"
+#include <sstream>
 
 using std::cout;
 using std::endl;
@@ -28,10 +29,21 @@ public:
 						// > 0 - point-potential replacement radius
 	boost::optional<Point> normal; // -nx *number* -ny *number* -nz *number* 
 	double l0 = 0;			// -l0 *in deg*
-	bool flatMode = false;	//don't use spherical model
+	bool flatMode = false;	// don't use spherical model
+	std::vector<int> gpuIdMap{};	// -gpuIdMap 0,2,4
 
 	TopogravArgs(int argc, char *argv[]) {
 		InputParser ip(argc, argv);
+
+		if(ip.exists("gpuIdMap")) {
+			std::string s;
+			ip["gpuIdMap"] >> s;
+			std::string segment;
+			std::stringstream ss(s);
+			while(std::getline(ss, segment, ','))
+				gpuIdMap.push_back(std::stoi(segment));
+		}
+
 		ip["topoGrd7"] >> topoGridFname;
 		ip["gravGrd7"] >> gravGridFname;
 		ip["dens"] >> dens;

@@ -1,7 +1,7 @@
 HIP_PATH?= $(wildcard /opt/rocm/hip)
 HIPCC = $(HIP_PATH)/bin/hipcc
 HIPCC_INCLUDE_PATH = /opt/rocm/include/
-HIPCC_FLAGS = -Wno-unused-result
+HIPCC_FLAGS = -Wno-unused-result -mcpu=gfx900 -mcpu=gfx906
 
 CXX = g++
 CXXFLAGS = -O2 --std=c++17 -fPIE
