@@ -210,7 +210,7 @@ void cubeGen(const Volume &v, const Point J, vector<HexahedronWid, VAlloc> &hsi)
 
 	for (int zi = 0; zi < v.z.n; ++zi)
 		for (int yi = 0; yi < v.y.n; ++yi)
-			for (int xi = 0; xi < v.x.n; ++xi) {				
+			for (int xi = 0; xi < v.x.n; ++xi) {
 				Quadrangle cur{
 					Point{v.x.at(xi+1), v.y.at(yi+1), 0}, 
 					Point{v.x.at(xi+1), v.y.at(yi), 0}, 
@@ -224,6 +224,48 @@ void cubeGen(const Volume &v, const Point J, vector<HexahedronWid, VAlloc> &hsi)
 					cur + Point{0, 0, v.z.at(zi)},
 					J };
 			}	
+}
+
+template <class VAlloc>
+void ellipsoidGen(const Ellipsoid &e, const int nl, const int nB, const int nR, const Point J, vector<HexahedronWid, VAlloc> &hsi) {
+	limits ll{0, M_PI_2, nl}, lB{0, M_PI_2, nB}, lReq{0, e.Req, nR}, lRpl{0, e.Req, nR};
+	// hsi.resize(ll.n * lB.n * lReq.n);
+	hsi.resize(0);
+	const int riStart = 0;
+
+	const auto makeQuadrangle = [&](const Ellipsoid &e, const int Bi, const int li) {
+		return Quadrangle{
+			e.getPoint(lB.at(Bi+1), ll.at(li+1)),
+			e.getPoint(lB.at(Bi), ll.at(li+1)),
+			e.getPoint(lB.at(Bi+1), ll.at(li)),
+			e.getPoint(lB.at(Bi), ll.at(li)),
+		};
+	};
+
+	for(int ri = riStart; ri < lReq.n; ++ri)
+		for(int li = 0; li < ll.n; ++li)
+			for(int Bi = 0; Bi < lB.n; ++Bi) {
+				Quadrangle internal;
+				if(ri > 0) {
+					Ellipsoid ei{lReq.at(ri), lRpl.at(ri)};
+					internal = makeQuadrangle(ei, Bi, li);
+				}
+				Ellipsoid ee{lReq.at(ri+1), lRpl.at(ri+1)};
+				Quadrangle external = makeQuadrangle(ee, Bi, li);
+				// const int ind = (ri*ll.n + li)*lB.n + Bi;
+				// hsi[ind] = Hexahedron{ external, internal, J };
+				hsi.push_back(Hexahedron{ external, internal, J });
+			}
+			
+
+	const auto dbl = [&](const std::function<void(Hexahedron&)> &f) {
+		vector<Hexahedron> tmp(hsi.begin(), hsi.end());
+		for(auto& h: tmp) f(h);
+		hsi.insert(hsi.end(), tmp.begin(), tmp.end());
+	};
+	dbl([](Hexahedron& h){ h.scale({-1, 1, 1}); });
+	dbl([](Hexahedron& h){ h.scale({1, -1, 1}); });
+	dbl([](Hexahedron& h){ h.scale({1, 1, -1}); });
 }
 
 template <class VAlloc>
@@ -311,6 +353,33 @@ void hexTest() {
 	cout << "Done." << endl;
 }
 
+template<class Input = double, class Acc = Input, class Result = Acc>
+class Statistics {
+	std::function<Acc(const Input&, const Acc&)> add;
+	std::function<Result(const Acc&, const unsigned int count)> end;
+	Acc init;
+	Acc acc;
+	unsigned int count = 0;
+public:
+	Statistics(
+		const Acc &acc = {}, 
+		const std::function<Acc(const Input&, const Acc&)> &add = [](const Input& i, const Acc& acc){ return i + acc; },
+		const std::function<Result(const Acc&, const unsigned int count)> &end = [](const Acc& acc, const unsigned int count){ return acc; }
+	) : acc(acc), init(acc), add(add), end(end) {}
+
+	void next(const Input& i) {
+		acc = add(i, acc);
+		++count;
+	}
+	Result get() const {
+		return end(acc, count);
+	}
+	void reset() {
+		acc = init;
+		count = 0;
+	}
+};
+
 class WellDemagCluster : public MPIwrapper {
 public:
 	const int maxGPUmemMB = 5000;
@@ -319,12 +388,103 @@ public:
 
 	SharedMemBase<gElementsShared> *sharedMem = 0;
 
-	WellDemagCluster() : MPIwrapper() {
+	WellDemagCluster(const vector<int> &gpuIdMap = {}) : MPIwrapper() {
 		if (gridSize < 2) throw std::runtime_error("You must run at least 2 MPI processes.");
 		if (root != 0) throw std::runtime_error("Root process must have rank = 0.");
 		const auto lid = localId();
 		const int devId = !isRoot() && std::get<1>(lid) ? std::get<0>(lid) - 1 : std::get<0>(lid);
-		cuSolver::setDevice(devId);
+		const int mappedDevId = devId < gpuIdMap.size()? gpuIdMap[devId] : devId;
+		cuSolver::setDevice(mappedDevId);
+	}
+
+	void runEllipsoid(int argc, char *argv[]) {
+		InputParser inp(argc, argv);
+		const Ellipsoid e(10, 10);
+
+		int nl = 20, nB = 20, nR = 20;
+
+		const double K = 0.2;
+		//const Point Hprime = { 14, 14, 35 }; //~40A/m
+		const Point Hprime = { 0, 0, 50 };
+
+		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel){
+			// cubeGen(Volume{{-1,1,nl*2}, {-1,1,nB*2}, {-1,1,nR*2}}, Hprime * K, hsi);
+			ellipsoidGen(e, nl, nB, nR, Hprime * K, hsi);
+			Kmodel.assign(hsi.size(), K);
+		};
+		const auto createCudaSolver = [](const vector<HexahedronWid>& hsi) {
+			return gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+		};
+
+
+		const auto Ipres = (Hprime * K) / (1. + K/3.);
+		cout << "Sphere presice I = " << Ipres << endl;
+
+		Stopwatch tmr;
+		tmr.start();
+		vector<HexahedronWid> hsi = demagSimpleIter<HexahedronWid>(ellipsoidModelGenerator, createCudaSolver);
+		if(!isRoot()) return;
+		cout << "Total time: " << tmr.stop() << "sec." << endl;
+
+		const int layersN = hsi.size() / (nl*nB*8);
+		cout << "Layers: " << layersN << endl;
+
+		// Mean dens for model
+		Statistics<HexahedronWid, Point> meanStat(
+			Point{},
+			[](auto& h, auto& acc){ return h.dens + acc; },
+			[](auto& acc, auto count){ return acc / count; }
+		);
+		// Mean dens by layer
+		std::vector meanStatLayers(layersN, Statistics<HexahedronWid, Point>(
+			Point{},
+			[](auto& h, auto& acc){ return h.dens + acc; },
+			[](auto& acc, auto count){ return acc / count; }
+		));
+		const int inSz = nl*nB;
+		for(int part = 0; part < 8; ++part)
+			for(int layer = 0; layer < layersN; ++layer) 
+				for(int i = 0; i < inSz; ++i) {
+					const int idx = ((part * layersN) + layer) * inSz + i;
+					meanStatLayers[layer].next(hsi[idx]);
+				}
+		for(auto& h: hsi) meanStat.next(h);
+		const Point mean = meanStat.get();
+
+
+		// RMS dens for model
+		Statistics<Point, double> rmsStat(
+			0,
+			[&](auto& diff, auto& acc){ 
+				const double d = diff.eqNorm();
+				return acc + d*d; 
+			},
+			[](auto& acc, auto count){ return std::sqrt(acc / count); }
+		);
+		// RMS dens by layer
+		std::vector rmsStatLayers(layersN, Statistics<Point, double>(
+			0,
+			[&](auto& diff, auto& acc){ 
+				const double d = diff.eqNorm();
+				return acc + d*d; 
+			},
+			[](auto& acc, auto count){ return std::sqrt(acc / count); }
+		));
+		for(int part = 0; part < 8; ++part)
+			for(int layer = 0; layer < layersN; ++layer) 
+				for(int i = 0; i < inSz; ++i) {
+					const int idx = ((part * layersN) + layer) * inSz + i;
+					rmsStatLayers[layer].next(hsi[idx].dens - meanStatLayers[layer].get());
+				}
+		for(auto& h: hsi) rmsStat.next(h.dens - mean);
+		const double rms = rmsStat.get();
+
+		cout << "Sphere presice I = " << Ipres << " | rel_err = " << (Ipres-mean).eqNorm()/Ipres.eqNorm() << endl;
+		cout << "Jmean= " << mean << " | rms_err= " << rms << endl << endl;
+
+		for(int layer = 0; layer < layersN; ++layer) {
+			cout << layer << ": "  << "Jmean= " << meanStatLayers[layer].get() << " | rms_err= " << rmsStatLayers[layer].get() << endl;
+		}
 	}
 
 	void run(int argc, char *argv[]) {
@@ -396,23 +556,20 @@ public:
 		const limits fieldDim = { -25 + 0.00001, 25 + 0.00001, 40 };
 		Stopwatch tmr;
 		tmr.start();
-		calcDemag(cubeModelGenerator, cubeVolume, fieldDim, fieldDim, H, "cube", DPR);
+		calcDemag<HexahedronWid>(cubeModelGenerator, cubeVolume, fieldDim, fieldDim, H, "cube", DPR);
 		if(isRoot()) {
 			cout << "Total time: " << tmr.stop() << "sec." << endl;
 		}
 	}
 
 private:
-	void calcDemag(
-			const std::function<void(vector<HexahedronWid>&, vector<double>&)> &modelGenerator,
-			const Volume& v,
-			const limits& fieldDimX, const limits& fieldDimY, const double H,
-			const string& filePrefix,
-			const double DPR
-		) {
-		
+	template<class ClosedShape>
+	vector<ClosedShape> demagSimpleIter(
+		const std::function<void(vector<ClosedShape>&, vector<double>&)> &modelGenerator,
+		const std::function<std::unique_ptr<gFieldSolver>(const vector<ClosedShape>&)> createCudaSolver
+	) {
 		if(isRoot()) cout << "Generating model..." << endl;
-		vector<HexahedronWid> hsi;
+		vector<ClosedShape> hsi;
 		vector<double> K;
 		modelGenerator(hsi, K);
 		if(isRoot()) cout << "Model size: " << hsi.size() << endl;
@@ -420,12 +577,103 @@ private:
 		vector<Point> J0(hsi.size());
 		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
 
-		const auto createCudaSolver = [&DPR](const vector<HexahedronWid>& hsi) {
+		//re-calculate J (magnetization) in every ClosedShape
+		const auto &fJn = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> &res) {
+			Bcast(hsi);
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
+			vector<Point> fieldPoints(res.size());
+			std::transform(hsi.cbegin(), hsi.cbegin() + fieldPoints.size(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
+			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
+			int cnt = 0;
+			if (!isRoot()) {
+				while (1) {
+					const vector<Point> task = pool.getTask();
+					if (!task.size()) break;
+					cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
+					vector<Point> result(task.size());
+					for (int i = 0; i < task.size(); ++i)
+						result[i] = solver->solve(task[i]);
+					pool.submit(result);
+				}
+			} else {
+				cout << "result gather ok" << endl;
+				for (int i = 0; i < res.size(); ++i) 
+					res[i] = -(-res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
+			}
+		};
+
+		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
+		const auto residualEqAndCopy = [](const vector<Point> &res, vector<ClosedShape> &hsi) {
+			double sum = 0;
+			for (int i = 0; i < res.size(); ++i) {
+				const Point v = res[i] - hsi[i].dens;
+				sum += v^v;
+				hsi[i].dens = res[i];
+			}
+			return sqrt(sum);
+		};
+
+		
+		cout << "Demag Solving..." << endl;
+
+		// Not Root will do calculations here
+		if (!isRoot()) {
+			while (1) {
+				bool cont = false;
+				Bcast(cont);
+				if (!cont) break;
+				auto nullVect = vector<Point>();
+				fJn(nullVect);
+			}
+			cout << "Done." << endl;
+			return {};
+		}
+		
+		const double eps = 1e-4;
+		const int maxIter = 30;
+		double err = 1, prvErr = err+1;
+		for (int it = 0; it < maxIter && err > eps && err < prvErr; ++it) {
+			cout << "Iter: " << it << endl;
+			bool cont = true;
+			Bcast(cont);
+			vector<Point> In(hsi.size());
+			fJn(In);
+			cout << endl;
+			
+			prvErr = err;
+			err = residualEqAndCopy(In, hsi) / [&In]() {
+				double sum = 0;
+				for (auto& i: In)
+					sum += i ^ i;
+				return sqrt(sum);
+			}();
+			
+			const auto ediff = err - prvErr;
+			cout << "Err: " << err << "(" << (ediff>0?"+":"") << ediff << ")" << " at iter: " << it << endl;
+		}
+		bool cont = false;
+		Bcast(cont);
+
+		return hsi;
+	}
+
+	template<class ClosedShape>
+	void calcDemag(
+		const std::function<void(vector<ClosedShape>&, vector<double>&)> &modelGenerator,
+		const Volume& v,
+		const limits& fieldDimX, const limits& fieldDimY, const double H,
+		const string& filePrefix,
+		const double DPR
+	) {
+		const auto createCudaSolver = [&DPR](const vector<ClosedShape>& hsi) {
 			return	DPR < 0
 				? gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend())
 				: gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), DPR, hsi.size())
 			;
 		};
+
+		vector<ClosedShape> hsi = demagSimpleIter<ClosedShape>(modelGenerator, createCudaSolver);
+		if(!isRoot()) return;
 
 		const auto &fOnDat = [&](Dat3D<Point> &res) {
 			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
@@ -488,61 +736,6 @@ private:
 			z.toGrid().Write(fname + "_z.grd");
 		};
 
-		//re-calculate J (magnetization) in every Hexahedron
-		const auto &fJn = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> &res) {
-			Bcast(hsi);
-
-			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
-			vector<Point> fieldPoints(res.size());
-			std::transform(hsi.cbegin(), hsi.cbegin() + fieldPoints.size(), fieldPoints.begin(), [](const HexahedronWid &h) {return h.massCenter();});
-			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
-			int cnt = 0;
-			if (!isRoot()) {
-				while (1) {
-					const vector<Point> task = pool.getTask();
-					if (!task.size()) break;
-					cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
-					vector<Point> result(task.size());
-					for (int i = 0; i < task.size(); ++i)
-						result[i] = solver->solve(task[i]);
-					pool.submit(result);
-				}
-			} else {
-				cout << "result gather ok" << endl;
-				for (int i = 0; i < res.size(); ++i)
-					res[i] = (-res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
-			}
-			
-			/*
-			for (int i = 0; i < hsi.size(); ++i) {
-				const Point p0 = hsi[i].massCenter();
-				res[i] = solver->solve(p0) * K[i] + J0[i];
-				if (!i || !((100 * (i + 1)) % res.size()) || i == res.size() - 1)
-					cout << "\r" << (100 * (i + 1)) / res.size() << "%";
-			}
-			*/
-		};
-
-		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
-		const auto residualEqAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
-			double sum = 0;
-			for (int i = 0; i < res.size(); ++i) {
-				const Point v = res[i] - hsi[i].dens;
-				sum += v^v;
-				hsi[i].dens = res[i];
-			}
-			return sqrt(sum);
-		};
-		const auto residualMaxAndCopy = [](const vector<Point> &res, vector<HexahedronWid> &hsi) {
-			double maxDiff = 0;
-			for (int i = 0; i < res.size(); ++i) {
-				const Point v = res[i] - hsi[i].dens;
-				maxDiff = std::max({maxDiff, std::abs(v.x), std::abs(v.y), std::abs(v.z)});
-				hsi[i].dens = res[i];
-			}
-			return maxDiff;
-		};
-
 
 		const auto expJ = [&hsi, &v](const string& fname, const int layerIdx = 0) {	//dump J (magnetization)
 			Field x{ v.x, v.y }, y{ x }, z{ x };
@@ -565,65 +758,7 @@ private:
 				expJ(fname + "_" + std::to_string(zi), zi);	
 		};
 
-		
-		cout << "Solving..." << endl;
 
-		//not Root will return from this if
-		if (!isRoot()) {
-			while (1) {
-				bool cont = false;
-				Bcast(cont);
-				if (!cont) break;
-				auto nullVect = vector<Point>();
-				fJn(nullVect);
-			}
-			cout << "Done." << endl;
-			return;
-		}
-
-		//Only Root will continue from here
-
-		expJall("J0/" + filePrefix + "J0");
-		//fInWell("inWell0.dat");
-		//fOn(filePrefix + "Field0");
-		cout << "No demag solving done" << endl;
-
-		//end here
-		//Bcast(false);
-		//return;
-		
-		
-		const double eps = 1e-4;
-		const int maxIter = 30;
-		double err = 1;
-		for (int it = 0; it < maxIter && err > eps; ++it) {
-			cout << "Iter: " << it << endl;
-			bool cont = true;
-			Bcast(cont);
-			vector<Point> In(hsi.size());
-			fJn(In);
-			cout << endl;
-			
-			/*
-			err = residualMaxAndCopy(In, hsi) / [&In]() {
-				double maxDiff = 0;
-				for (auto& v: In)
-					maxDiff = std::max({maxDiff, std::abs(v.x), std::abs(v.y), std::abs(v.z)});
-				return maxDiff;
-			}();
-			*/
-			err = residualEqAndCopy(In, hsi) / [&In]() {
-				double sum = 0;
-				for (auto& i: In)
-					sum += i ^ i;
-				return sqrt(sum);
-			}();
-			
-			cout << "Err: " << err << " at iter: " << it << endl;
-			//fOn(filePrefix + "Field.dat");
-		}
-		bool cont = false;
-		Bcast(cont);
 
 		const auto expJdiff = [&expJall, &v](const string& filePrefix) {
 			expJall("Jn/" + filePrefix + "Jn");
@@ -877,7 +1012,7 @@ private:
 int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
-		WellDemagCluster().run(argc, argv);
+		WellDemagCluster().runEllipsoid(argc, argv);
 		//wellTest(argc, argv);
 		return 0;
 
@@ -967,3 +1102,55 @@ int main(int argc, char *argv[]) {
 	cout << "Done" << endl;
 	return 0;
 }
+
+
+/*
+template <class VAlloc>
+void ellipsoidGenPyramid(const Ellipsoid &e, const int nl, const int nB, const Point J, vector<Pyramid, VAlloc> &hsi) {
+	limits ll{0, M_PI_2, nl}, lB{0, M_PI_2, nB};
+	hsi.resize(ll.n * lB.n);
+
+	for(int li = 0; li < ll.n; ++li)
+		for(int Bi = 0; Bi < lB.n; ++Bi)
+			hsi[li * lB.n + Bi] = Pyramid{
+				Point{}, 	//apex
+				{			//base
+					e.getPoint(lB.at(Bi), ll.at(li)),
+					e.getPoint(lB.at(Bi), ll.at(li+1)),
+					e.getPoint(lB.at(Bi+1), ll.at(li+1)),
+					e.getPoint(lB.at(Bi+1), ll.at(li))
+				},
+				J
+			};
+
+	const auto dbl = [&](const std::function<Pyramid(Pyramid)> &f) {
+		vector<Pyramid> tmp(hsi.begin(), hsi.end());
+		std::transform(tmp.begin(), tmp.end(), tmp.begin(), f);
+		hsi.insert(hsi.end(), tmp.begin(), tmp.end());
+	};
+	dbl([](Pyramid p){ 
+		p.apex.x *= -1;
+		p.base[0].x *= -1;
+		p.base[1].x *= -1;
+		p.base[2].x *= -1;
+		p.base[3].x *= -1;
+		return p;
+	});
+	dbl([](Pyramid p){ 
+		p.apex.y *= -1;
+		p.base[0].y *= -1;
+		p.base[1].y *= -1;
+		p.base[2].y *= -1;
+		p.base[3].y *= -1;
+		return p;
+	});
+	dbl([](Pyramid p){ 
+		p.apex.z *= -1;
+		p.base[0].z *= -1;
+		p.base[1].z *= -1;
+		p.base[2].z *= -1;
+		p.base[3].z *= -1;
+		return p;
+	});
+}
+*/

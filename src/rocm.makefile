@@ -1,7 +1,7 @@
 HIP_PATH?= $(wildcard /opt/rocm/hip)
 HIPCC = $(HIP_PATH)/bin/hipcc
 HIPCC_INCLUDE_PATH = /opt/rocm/include/
-HIPCC_FLAGS = -Wno-unused-result
+HIPCC_FLAGS = -Wno-unused-result -DROCPRIM_DISABLE_DPP
 
 CXX = g++
 CXXFLAGS = -O2 --std=c++17 -fPIE
@@ -25,7 +25,7 @@ BOOST_PATH = ../deps/boost_1_73_0
 BOOST_INCLUDE_PATH = $(BOOST_PATH)
 
 #MPICH
-MPI_INCLUDE_PATH = /usr/include/x86_64-linux-gnu/mpi
+MPI_INCLUDE_PATH = /usr/lib/x86_64-linux-gnu/mpich/include/
 MPI_LIB_PATH = /usr/lib/x86_64-linux-gnu/
 
 #---------------------------------------------------------
@@ -51,4 +51,4 @@ $(TARGET): $(OBJS_CPU) $(OBJS_HIP)
 	$(HIPCC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) -L$(GEOLIB_LIB_PATH) -lGeographic -lrt -L$(MPI_LIB_PATH) -lmpich
 
 clean:
-	rm -rf *.o $(TARGET)
+	rm -rf *.o $(TARGET) *.hip.*

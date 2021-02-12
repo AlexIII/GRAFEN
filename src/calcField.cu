@@ -37,11 +37,12 @@ __host__ __device__ static Point intTrAn(const Point3D<T> &p0, const Triangle<T>
 	const T a23m = a23.eqNorm();
 	const T a31m = a31.eqNorm();
 	//if (a3m + a1m - a31m < 1e-9 || a1m + a2m - a12m < 1e-9 || a2m + a3m - a23m < 1e-9) return{ HUGE_VAL, HUGE_VAL, HUGE_VAL };
-	const Point3D<T> N = t.normal();
 
 	res = a31*(log((a3m + a1m + a31m) / (a3m + a1m - a31m)) / a31m);
 	res += a12*(log((a1m + a2m + a12m) / (a1m + a2m - a12m)) / a12m);
 	res += a23*(log((a2m + a3m + a23m) / (a2m + a3m - a23m)) / a23m);
+	
+	const Point3D<T> N = t.normal();
 	res = N*res;
 	res += N*(2.0*atan2(tripleprod(a1, a2, a3), (a1m*a2m*a3m + a3m*(a1^a2) + a2m*(a1^a3) + a1m*(a2^a3))));
 
@@ -58,14 +59,16 @@ Point intHexTr__(const Point &p0, const HexahedronWid &h) {
 	return sum;
 }
 
-template<typename T>
-__host__ __device__ static Point intHexTr(const Point &p0, const HexahedronWid &h) {
+template<typename T, class ClosedShape>
+__host__ __device__ static Point intHexTr(const Point &p0, const ClosedShape &shape) {
 	Point3D<T> sum;
 	const Point3D<T> p0f(p0);
-	const Point3D<T> densf(h.dens);
-	for (int i = 0; i < 12; ++i) {
-		const Triangle<T> tri(h.getTri(i));
-		sum += intTrAn<T>(p0f, tri) * (tri.normal() ^ densf);
+	const Point3D<T> densf(shape.dens);
+	for (int i = 0; i < shape.nTriangles; ++i) {
+		const Triangle<T> tri(shape.getTri(i));
+		auto v = intTrAn<T>(p0f, tri) * (tri.normal() ^ densf);
+		if(!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) v = {};
+		sum += v;
 	}
 	return sum;
 }
@@ -159,10 +162,11 @@ std::unique_ptr<gFieldInvSolver> gFieldInvSolver::getCUDAtransSolver(const std::
 }
 */
 
+template<class ClosedShape>
 class gFieldCUDAsolver : public gFieldSolver {
 public:
-	using dvHex = thrust::device_vector<HexahedronWid>;
-	gFieldCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend) {
+	using dvHex = thrust::device_vector<ClosedShape>;
+	gFieldCUDAsolver(const ClosedShape* const qbegin, const ClosedShape* const qend) {
 		qsCUDA.assign(qbegin, qend);
 	}
 	virtual ~gFieldCUDAsolver() {}
@@ -170,10 +174,10 @@ public:
 		return solve(qsCUDA.cbegin(), qsCUDA.cend(), p0);
 	}
 
-	static Point solve(const dvHex::const_iterator &qbegin, const dvHex::const_iterator &qend, const Point &p0) {
+	static Point solve(const typename dvHex::const_iterator &qbegin, const typename dvHex::const_iterator &qend, const Point &p0) {
 		Point res;
-		const auto& triKr = [=] __device__ __host__(const HexahedronWid &h)->Point {
-			return intHexTr<KernelComputeType>(p0, h);
+		const auto& triKr = [=] __device__ __host__(const ClosedShape &shape)->Point {
+			return intHexTr<KernelComputeType, ClosedShape>(p0, shape);
 		};
 		const auto& triClac = [&](const auto &execPol) {
 			return thrust::transform_reduce(execPol, qbegin, qend, triKr, Point(), thrust::plus<Point>());
@@ -186,10 +190,12 @@ protected:
 	dvHex qsCUDA;			//ro
 };
 
-class gFieldCUDAreplacingSolver : public gFieldCUDAsolver {
+template<class ClosedShape>
+class gFieldCUDAreplacingSolver : public gFieldCUDAsolver<ClosedShape> {
+	using Base = gFieldCUDAsolver<ClosedShape>;
 public:
-	gFieldCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend, const double dotPotentialRad, 
-			const int tirBufSz) : gFieldCUDAsolver(qbegin, qend), dotPotentialRad(dotPotentialRad) {
+	gFieldCUDAreplacingSolver(const ClosedShape* const qbegin, const ClosedShape* const qend, const double dotPotentialRad, 
+			const int tirBufSz) : Base(qbegin, qend), dotPotentialRad(dotPotentialRad) {
 		qsCUDAprec.resize(tirBufSz);
 		std::vector<std::array<MagLine<KernelComputeType>, 3>> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.template getLines<KernelComputeType>(); });
@@ -206,39 +212,46 @@ public:
 		//rough computing
 		triSz = 0;					//reset precise elemets counter
 		int* const cnt = &triSz;	//precise elemets counter
-		HexahedronWid * const hPres = qsCUDAprec.data().get(); //precise elemets buffer
+		ClosedShape* const hPres = qsCUDAprec.data().get(); //precise elemets buffer
 		const double rad = dotPotentialRad;
 		const Point3D<KernelComputeType> p0f = p0;
-		res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), linesCUDA.begin(), Point(), thrust::plus<Point>(),
-			[=] __device__(const HexahedronWid& h, const std::array<MagLine<KernelComputeType>, 3> &ml) -> Point {
+		res += thrust::inner_product(Base::qsCUDA.begin(), Base::qsCUDA.end(), linesCUDA.begin(), Point(), thrust::plus<Point>(),
+			[=] __device__(const ClosedShape& shape, const std::array<MagLine<KernelComputeType>, 3> &ml) -> Point {
 			if ((ml[0].p1 - p0f).eqNorm() > rad)
 				return ml[0].Hfield(p0f) + ml[1].Hfield(p0f) + ml[2].Hfield(p0f);
-			hPres[atomicAdd(cnt, 1)] = h;
+			hPres[atomicAdd(cnt, 1)] = shape;
 			return Point();
 		});
 		
 		//precise computing
 		const int blockSize = triSz;	//precise elemets buffer size
 		if (blockSize == 0) return res;
-		res += gFieldCUDAsolver::solve(qsCUDAprec.cbegin(), qsCUDAprec.cbegin() + blockSize, p0);
+		res += Base::solve(qsCUDAprec.cbegin(), qsCUDAprec.cbegin() + blockSize, p0);
 
 		return res;
 	}
 
 private:
 	thrust::device_vector<std::array<MagLine<KernelComputeType>, 3>> linesCUDA;		//ro
-	dvHex qsCUDAprec;										//rw
-	cuVar<int> triSz;										//rw
+	typename Base::dvHex qsCUDAprec;												//rw
+	cuVar<int> triSz;																//rw
 	const double dotPotentialRad;
 };
 
-std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
+template<class ClosedShape>
+std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAreplacingSolver(const ClosedShape* const qbegin, const ClosedShape* const qend,
 	const double dotPotentialRad, const int tirBufSz) {
-	return std::unique_ptr<gFieldSolver>(new gFieldCUDAreplacingSolver(qbegin, qend, dotPotentialRad, tirBufSz));
+	return std::unique_ptr<gFieldSolver>(new gFieldCUDAreplacingSolver<ClosedShape>(qbegin, qend, dotPotentialRad, tirBufSz));
 }
-std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend) {
-	return std::unique_ptr<gFieldSolver>(new gFieldCUDAsolver(qbegin, qend));
+template std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAreplacingSolver(
+	const HexahedronWid* const, const HexahedronWid* const, const double, const int);
+
+template<class ClosedShape>
+std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const ClosedShape* const qbegin, const ClosedShape* const qend) {
+	return std::unique_ptr<gFieldSolver>(new gFieldCUDAsolver<ClosedShape>(qbegin, qend));
 }
+template std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const HexahedronWid* const, const HexahedronWid* const);
+template std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const Pyramid* const, const Pyramid* const);
 
 static void CheckCudaErrorAux(const char *file, unsigned line, const char *statement, cudaError_t err)
 {

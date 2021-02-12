@@ -29,11 +29,24 @@ public:
 	virtual ~gFieldInvSolver() {}
 };
 */
+
+/*
+	Template interface for ClosedShape
+	struct ClosedShape {
+		static constexpr int nTriangles; //number of triangles
+		CUDA_HOST_DEV_FUN Triangle<double> getTri(const int i) const;
+		PointValue<double> getMassPoint() const;
+	};
+*/
+
+
 class gFieldSolver : public cuSolver {
 public:
 	virtual Point solve(const Point &p0) = 0;
-	static std::unique_ptr<gFieldSolver> getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend);
-	static std::unique_ptr<gFieldSolver> getCUDAreplacingSolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
+	template<class ClosedShape>
+	static std::unique_ptr<gFieldSolver> getCUDAsolver(const ClosedShape* const qbegin, const ClosedShape* const qend);
+	template<class ClosedShape>
+	static std::unique_ptr<gFieldSolver> getCUDAreplacingSolver(const ClosedShape* const qbegin, const ClosedShape* const qend,
 		const double dotPotentialRad, const int tirBufSz);
 	virtual ~gFieldSolver() {}
 };

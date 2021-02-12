@@ -175,6 +175,19 @@ public:
 	}
 };
 
+template<typename T>
+CUDA_HOST_DEV_FUN T min3(const T& v1, const T& v2, const T& v3) {
+	const auto minv1v2 = v1 < v2? v1 : v2;
+	return minv1v2 < v3? minv1v2 : v3;
+}
+
+template<typename T>
+CUDA_HOST_DEV_FUN bool arePointsOnOneSideOfLine(const Point3D<T>& lineP1, const Point3D<T>& lineP2, const Point3D<T>& testPoint1, const Point3D<T>& testPoint2) {
+	const auto m1 = (lineP2 - lineP1) * (testPoint1 - lineP2);
+	const auto m2 = (lineP2 - lineP1) * (testPoint2 - lineP2);
+	return (min3(m1.x, m1.y, m1.z) > 0) == (min3(m2.x, m2.y, m2.z) > 0);
+}
+
 using Point = Point3D<double>;
 
 template<typename VALTYPE>
@@ -353,6 +366,14 @@ public:
 	Hexahedron(const Quadrangle &qUpper, const Quadrangle &qLower, const Point dens = 0) :
 		Hexahedron({ qUpper.p1, qUpper.p2, qUpper.p3, qUpper.p4, qLower.p1, qLower.p2, qLower.p3, qLower.p4}, dens) {}
 
+	void scale(const Point& s) {
+		for(int i = 0; i < 8; ++i) {
+			p[i].x *= s.x;
+			p[i].y *= s.y;
+			p[i].z *= s.z;
+		}
+	}
+
 	std::vector<Hexahedron> splitTo4() const {
 		const double cx = (p[0].x + p[2].x) / 2.;
 		const double cy = (p[0].y + p[1].y) / 2.;
@@ -481,6 +502,7 @@ private:
 #define CALC_NORMALS_ON_DEMAND
 class HexahedronWid : public Hexahedron {
 public:
+	static constexpr int nTriangles = 12;
 #ifndef CALC_NORMALS_ON_DEMAND
 	Point triNormals[12];
 	HexahedronWid(const Hexahedron &h) : Hexahedron(h) { updNormals(); }
@@ -488,31 +510,13 @@ public:
 	HexahedronWid(const Hexahedron &h) : Hexahedron(h) {}
 #endif
 	CUDA_HOST_DEV_FUN HexahedronWid() {}
-	/*
-	CUDA_HOST_DEV_FUN Triangle getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
-		switch (i) {
-			case 0: return Triangle(p[2], p[3], p[1]);
-			case 1: return Triangle(p[2], p[1], p[0]);
-			case 2: return Triangle(p[0], p[4], p[6]);
-			case 3: return Triangle(p[0], p[6], p[2]);
-			case 4: return Triangle(p[3], p[7], p[5]);
-			case 5: return Triangle(p[3], p[5], p[1]);
-			case 6: return Triangle(p[0], p[1], p[5]);
-			case 7: return Triangle(p[0], p[5], p[4]);
-			case 8: return Triangle(p[6], p[7], p[3]);
-			case 9: return Triangle(p[6], p[3], p[2]);
-			case 10: return Triangle(p[6], p[4], p[5]);
-			case 11: return Triangle(p[6], p[5], p[7]);
-			default: return Triangle();
-		}
-	}
-	*/
 	CUDA_HOST_DEV_FUN Triangle<double> getTri(const int i) const { //Triangle normal() is always external WRT Hexahedron
+		// Counterclockwise
 		switch(i) {
 			//upper plane
 			case 0:
 			case 1:
-				if (!isOnOneSide(p[2], p[1], p[0], p[3])) {
+				if (!arePointsOnOneSideOfLine(p[2], p[1], p[0], p[3])) {
 					//upper quadrangle is convex
 					if(i == 0) return Triangle(p[2], p[3], p[1]);
 					else return Triangle(p[2], p[1], p[0]);
@@ -538,7 +542,7 @@ public:
 			//lower plane
 			case 10:
 			case 11:
-				if (!isOnOneSide(p[6], p[5], p[4], p[7])) {
+				if (!arePointsOnOneSideOfLine(p[6], p[5], p[4], p[7])) {
 					//lower quadrangle is convex
 					if (i == 10) return Triangle(p[6], p[4], p[5]);
 					else return Triangle(p[6], p[5], p[7]);
@@ -552,7 +556,7 @@ public:
 			default: return Triangle<double>{};
 		}
 	}
-	
+/*	
 	CUDA_HOST_DEV_FUN Point getTriNorm(const int i) const {
 #ifndef CALC_NORMALS_ON_DEMAND
 		return triNormals[i];
@@ -567,12 +571,45 @@ private:
 			triNormals[i] = getTri(i).normal();
 	}
 #endif
-	CUDA_HOST_DEV_FUN bool isOnOneSide(const Point2D& l1, const Point2D& l2, const Point2D& p1, const Point2D& p2) const {
-		return getSide(l1, l2, p1) == getSide(l1, l2, p2);
+*/
+};
+
+class Pyramid {
+public:
+	Point apex;
+	Point base[4];
+	Point dens;
+	// Base:
+	// 1 ---> 2
+	// |      |
+	// |      |
+	// 0 <--- 3
+	static constexpr int nTriangles = 6;
+	CUDA_HOST_DEV_FUN Triangle<double> getTri(const int i) const {
+		switch(i) {
+			case 0:
+				return Triangle(apex, base[0], base[1]);
+			case 1:
+				return Triangle(apex, base[1], base[2]);
+			case 2:
+				return Triangle(apex, base[2], base[3]);
+			case 3:
+				return Triangle(apex, base[3], base[0]);
+			case 4:
+			case 5:
+				if (!arePointsOnOneSideOfLine(base[0], base[2], base[1], base[3])) {
+					//base is convex
+					return i == 4? Triangle(base[0], base[1], base[2]) : Triangle(base[0], base[2], base[3]);
+				} else {
+					//base is not convex
+					return i == 4? Triangle(base[0], base[1], base[3]) : Triangle(base[1], base[2], base[3]);
+				}
+			default: return Triangle<double>{};
+		}
 	}
-	CUDA_HOST_DEV_FUN bool getSide(const Point2D& l1, const Point2D& l2, const Point2D& p) const {
-		return (p.x - l1.x) / (l2.x - l1.x) - (p.y - l1.y) / (l2.y - l1.y) > 0;
-	}
+	// PointValue<double> getMassPoint() const {
+	// 	return {}; //no support
+	// }
 };
 
 class Ellipsoid {
