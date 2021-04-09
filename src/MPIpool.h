@@ -21,6 +21,7 @@ public:
 		mpi.send(res, mpi.root);
 	}
 
+	inline static bool logging = false;
 private:
 	MPIwrapper &mpi;
 
@@ -36,8 +37,10 @@ private:
 			
 			const size_t tn = from / chunkSize;
 			const size_t tt = task.size() / chunkSize;
-			if(tn < tt) cout << "Task dispatched " << tn+1 << " / " << tt << " : " << tmr.stop() << "sec." << endl;
-			else cout << "Worker relieved." << endl;
+			if(logging) {
+				if(tn < tt) cout << "Task dispatched " << tn+1 << " / " << tt << " : " << tmr.stop() << "sec." << endl;
+				else cout << "Worker relieved." << endl;
+			}
 
 			return { from, to };
 		};

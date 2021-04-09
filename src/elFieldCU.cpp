@@ -12,6 +12,7 @@
 #include <atomic>
 #include <algorithm>
 #include <initializer_list>
+#include <numeric>
 #include "mobj.h"
 #include "calcField.h"
 #include "inputLoader.h"
@@ -27,6 +28,7 @@ using std::string;
 using std::vector;
 using GeographicLib::TransverseMercator;
 
+#define MU_0 1.2566370614e-6
 #define G_CONST  1	//-6.67408
 #define MB (1024*1024)
 
@@ -188,20 +190,6 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const do
 	K.push_back(Koutter);
 	K.push_back(Koutter);
 	K.push_back(Koutter);
-
-	/*
-	//add 16 external quadrangles
-	auto eq1 = makeOuterHex({ xLim.lower, yLim.lower - l, v.z.upper }, { xLim.upper + l, yLim.lower, v.z.lower }).splitTo4();
-	auto eq2 = makeOuterHex({ xLim.upper, yLim.lower, v.z.upper }, { xLim.upper + l, yLim.upper + l, v.z.lower }).splitTo4();
-	auto eq3 = makeOuterHex({ xLim.lower - l, yLim.upper, v.z.upper }, { xLim.upper, yLim.upper + l, v.z.lower }).splitTo4();
-	auto eq4 = makeOuterHex({ xLim.lower - l, yLim.lower - l, v.z.upper }, { xLim.lower, yLim.upper, v.z.lower }).splitTo4();
-	hsi.insert(hsi.end(), eq1.cbegin(), eq1.cend());
-	hsi.insert(hsi.end(), eq2.cbegin(), eq2.cend());
-	hsi.insert(hsi.end(), eq3.cbegin(), eq3.cend());
-	hsi.insert(hsi.end(), eq4.cbegin(), eq4.cend());
-	for(int i = 0; i < 16; ++i)
-		K.push_back(Koutter);
-	*/
 }
 
 template <class VAlloc>
@@ -263,9 +251,9 @@ void ellipsoidGen(const Ellipsoid &e, const int nl, const int nB, const int nR, 
 		for(auto& h: tmp) f(h);
 		hsi.insert(hsi.end(), tmp.begin(), tmp.end());
 	};
-	dbl([](Hexahedron& h){ h.scale({-1, 1, 1}); });
-	dbl([](Hexahedron& h){ h.scale({1, -1, 1}); });
-	dbl([](Hexahedron& h){ h.scale({1, 1, -1}); });
+	dbl([](Hexahedron& h){ h.mirrorX(); });
+	dbl([](Hexahedron& h){ h.mirrorY(); });
+	dbl([](Hexahedron& h){ h.mirrorZ(); });
 }
 
 template <class VAlloc>
@@ -343,7 +331,7 @@ void hexTest() {
 		for (int j = 0; j < l.n; ++j) {
 			const Point p0{ l.atWh(j), l.atWh(i), H };
 			const Point res = (-intHexTr__(p0, hw)
-					 + (h.isIn(p0)? h.dens * (4.*M_PI / 3.) : Point())
+					 + (hw.isIn(p0)? hw.dens * (4.*M_PI / 3.) : Point())
 				) / (4 * M_PI);
 			dat.es.push_back({ { p0.x, p0.y, p0.z }, res });
 		}
@@ -380,6 +368,43 @@ public:
 	}
 };
 
+double field_Hz(const Ellipsoid &e, const Point J, const Point p) {
+	const double a = e.Req, b = e.Rpl;
+	const double x = p.x, y = p.y, z = p.z;
+
+	const Point M0 = J * (4. * M_PI * a*a * b / 3.);
+	const double q = sqrt(a*a - b*b);
+	const double tmp = x*x + z*z + q;
+	const double t = sqrt(tmp*tmp - 4. * z * z * q * q);
+
+	const double y1 = z, x1 = sqrt(x*x + y*y);
+	const double t1 = a*a + b*b - x1*x1 - y1*y1;
+	const double k = ( sqrt(t1*t1 - 4. * (a*a * b*b - a*a * y1*y1 - b*b * x1*x1)) - t1 ) / 2.;
+	const double c1 = sqrt(b*b + k);
+
+	// cout << M0 << " - " << q << " " << tmp << " " << t << " - " << y1 << " " << t1 << " " << k << " " << c1 << endl;
+
+	const double Hz = M0.eqNorm() * (3. * (z / (t * c1*c1*c1) - 1./(q*q) * (1./c1 - 1./q * atan2(q, b))));
+
+	return Hz;
+}
+
+Point field_sphere_H(const double R, const Point J, const Point p) {
+	const Point M0 = J * (4. * M_PI) * R*R*R / 3.;
+	const double mu = M0.eqNorm();
+	const Point n = M0.norm();
+	const double r = p.eqNorm();
+	const Point H = ( p * 3. * (n^p) / (r*r*r*r*r) - n / (r*r*r) ) * mu;
+	return H;
+}
+
+double field_sphere_H_in_Hz(const double R, const double Hprim_z, const double K, const Point p0) {
+	const double s = p0.x*p0.x + p0.y*p0.y + p0.z*p0.z;
+	const double dr = sqrt(s*s*s*s*s);
+	
+	return K / (K+3) * Hprim_z * R*R*R * (2*p0.z*p0.z - p0.x*p0.x - p0.y*p0.y)/dr;
+}
+
 class WellDemagCluster : public MPIwrapper {
 public:
 	const int maxGPUmemMB = 5000;
@@ -404,21 +429,26 @@ public:
 		int nl = 20, nB = 20, nR = 20;
 
 		const double K = 0.2;
-		//const Point Hprime = { 14, 14, 35 }; //~40A/m
-		const Point Hprime = { 0, 0, 50 };
+		const Point Hprime = { 14, 14, 35 }; //~40A/m
+		// const Point Hprime = { 0, 0, 50 };
+		const auto I0 = Hprime * K;
 
-		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel){
-			// cubeGen(Volume{{-1,1,nl*2}, {-1,1,nB*2}, {-1,1,nR*2}}, Hprime * K, hsi);
-			ellipsoidGen(e, nl, nB, nR, Hprime * K, hsi);
+		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
+			// const auto Ipres = I0 / (1. + K/3.);	// Use known precise I
+			ellipsoidGen(e, nl, nB, nR, I0, hsi);
 			Kmodel.assign(hsi.size(), K);
+			I0out.assign(hsi.size(), I0);
 		};
-		const auto createCudaSolver = [](const vector<HexahedronWid>& hsi) {
+		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out) {
+			cubeGen(Volume{{-10, 10, nl},{-5, 5, nB}, {-5, 5, nR}}, I0, hsi);
+			Kmodel.assign(hsi.size(), K);
+			I0out.assign(hsi.size(), I0);
+		};
+		const auto createCudaSolver = [&](const vector<HexahedronWid>& hsi) {
 			return gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+			// const double replDist = 3;
+			// return gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), replDist, nl*nB*nR*8);
 		};
-
-
-		const auto Ipres = (Hprime * K) / (1. + K/3.);
-		cout << "Sphere presice I = " << Ipres << endl;
 
 		Stopwatch tmr;
 		tmr.start();
@@ -455,18 +485,16 @@ public:
 		// RMS dens for model
 		Statistics<Point, double> rmsStat(
 			0,
-			[&](auto& diff, auto& acc){ 
-				const double d = diff.eqNorm();
-				return acc + d*d; 
+			[&](auto& diff, auto& acc){
+				return acc + (diff^diff); 
 			},
 			[](auto& acc, auto count){ return std::sqrt(acc / count); }
 		);
 		// RMS dens by layer
 		std::vector rmsStatLayers(layersN, Statistics<Point, double>(
 			0,
-			[&](auto& diff, auto& acc){ 
-				const double d = diff.eqNorm();
-				return acc + d*d; 
+			[&](auto& diff, auto& acc){
+				return acc + (diff^diff); 
 			},
 			[](auto& acc, auto count){ return std::sqrt(acc / count); }
 		));
@@ -479,12 +507,89 @@ public:
 		for(auto& h: hsi) rmsStat.next(h.dens - mean);
 		const double rms = rmsStat.get();
 
-		cout << "Sphere presice I = " << Ipres << " | rel_err = " << (Ipres-mean).eqNorm()/Ipres.eqNorm() << endl;
-		cout << "Jmean= " << mean << " | rms_err= " << rms << endl << endl;
+		// Testing, testing 1,2,3...
+
+		const double fieldElipHeight = 1;
+
+		const auto Ipres = I0 / (1. + K/3.);
+		cout << "Sphere presice I = " << Ipres << " | rel_err = " << (Ipres-mean).eqNorm()/Ipres.eqNorm()   << " | demag_rel_err = " << (Ipres-I0).eqNorm()/Ipres.eqNorm() << endl;
+		cout << "Jmean= " << mean << " | pres_err= " << (Ipres-mean)/Ipres << " | rms_err= " << rms << endl << endl;
 
 		for(int layer = 0; layer < layersN; ++layer) {
 			cout << layer << ": "  << "Jmean= " << meanStatLayers[layer].get() << " | rms_err= " << rmsStatLayers[layer].get() << endl;
 		}
+
+		const Point p0{0, 0, e.Req + fieldElipHeight};
+		// cout << "Sphere presice Hsnd_z = " << field_sphere_H_in_Hz(e.Req, Hprime.z, K, p0) << endl;
+		// const Point Hprec = field_sphere_H(e.Req, Ipres, p0) / (4.*M_PI);
+		// cout << "Sphere presice H = " << Hprec << endl;
+		// const Point noDemagHprec = field_sphere_H(e.Req, I0, p0) / (4.*M_PI);
+		// cout << "Sphere presice H (no demag) = " << noDemagHprec  << " | rel_err = " << (Hprec-noDemagHprec).eqNorm()/Hprec.eqNorm() << endl;
+
+
+		// {
+		// 	Dat3D<Point> dd;
+		// 	dd.es.resize(hsi.size());
+		// 	std::transform(hsi.cbegin(), hsi.cend(), dd.es.begin(), [](const HexahedronWid &h) -> Dat3D<Point>::Element {
+		// 		const auto p = h.massCenter();
+		// 		return {{p.x, p.y, p.z}, h.dens};
+		// 	});
+		// 	dd.write("elip_J_int.dat");
+		// }
+
+		const auto solver = createCudaSolver(hsi);
+
+
+		const auto &fOnDat = [&](Dat3D<Point> &res) {
+			for (auto &i : res) 
+				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
+		};
+
+		// {
+		// 	Dat3D<Point> dd;
+		// 	const double t = 0.001;
+		// 	for (double x = -15-t; x < 15; x += 0.2)
+		// 		for (double y = -15-t; y < 15; y += 0.2)
+		// 			dd.es.push_back({{ x, y, e.Req/2 + t}});
+		// 	fOnDat(dd);
+		// 	dd.write("elip_f_in_out_no_J3.dat");
+		// 	return;
+		// }
+
+		// {
+		// 	Dat3D<Point> dd;
+		// 	const double t = 0.007;
+		// 	for (double x = -15-t; x < 15; x += 0.2)
+		// 		for (double y = -15-t; y < 15; y += 0.2)
+		// 			dd.es.push_back({{ x, y, e.Req/2 + t}});
+
+		// 	fOnDat(dd);
+		// 	dd.write("cube_f_in_out.dat");
+
+		// 	for(auto &el: dd.es) el.p.z = e.Req + 1;
+		// 	fOnDat(dd);
+		// 	dd.write("cube_f_out.dat");
+		// }
+
+		// {
+		// 	Dat3D<Point> dd;
+		// 	for (double x = -15; x < 15; x += 0.2)
+		// 		for (double y = -15; y < 15; y += 0.2)
+		// 			dd.es.push_back({{ x, y, 1.01*e.Req}});
+		// 	fOnDat(dd);
+		// 	dd.write("elip_demag_calc.dat");
+		// }
+		// {
+		// 	Dat3D<Point> dd;
+		// 	for (double x = -15; x < 15; x += 0.2)
+		// 		for (double y = -15; y < 15; y += 0.2) {
+		// 			const Point p0{ x, y, 1.01*e.Req};
+		// 			const Point val = field_sphere_H(e.Req, Ipres, p0) / (4.*M_PI);
+		// 			dd.es.push_back({{p0.x, p0.y, p0.z}, val});
+		// 		}
+		// 	dd.write("elip_demag_prec.dat");
+		// }
+
 	}
 
 	void run(int argc, char *argv[]) {
@@ -541,13 +646,14 @@ public:
 		if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
 		if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
 
-		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel) {
-			const double K = 0.02;
+		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0) {
+			const double K = 0.2;
 			//const Point Hprime = { 14, 14, 35 }; //~40A/m
 			const Point Hprime = { 0, 0, 50 }; //~40A/m
 
-			cubeGen(cubeVolume, (Hprime*K), hsi);
+			cubeGen(cubeVolume, Hprime*K, hsi);
 			Kmodel.assign(hsi.size(), K);
+			I0.assign(hsi.size(), Hprime*K);
 		};
 
 		double DPR = std::max({ cubeVolume.x.d(), cubeVolume.y.d(), cubeVolume.z.d() }) * 4;
@@ -563,44 +669,140 @@ public:
 	}
 
 private:
+	template<typename T>
+	struct CG {
+		const vector<T> &b;
+		const std::function<vector<T>(vector<T>&)> Op;
+
+		bool ready = false;
+		vector<T> r;
+		vector<T> z;
+		vector<T> x;
+
+		CG(const vector<T> &b, const vector<T> &x0, const std::function<vector<T>(vector<T>&)> &Op): b(b), x(x0), Op(Op) {}
+
+		// x = ax + by
+		static void ax_plus_by(const double a, vector<T>& x, const double b, const vector<T>& y) {
+			std::transform(x.cbegin(), x.cend(), y.cbegin(), x.begin(), [&a, &b](const auto& x, const auto &y){ return x*a + y*b; });
+		}
+		static double dot(const vector<T>& a, const vector<T>& b) {
+			return std::transform_reduce(a.cbegin(), a.cend(), b.cbegin(), 0., 
+				[](const auto& a, const auto& b){ return a + b; }, 
+				[](const auto& a, const auto& b){ return a ^ b; }
+			);
+		}
+
+		double getError() const {
+			return sqrt(dot(r, r) / dot(b, b));
+		}
+
+		void prepare() {
+			r = Op(x);	//r0 = Ax
+			Assert(x.size() == r.size());
+			ax_plus_by(-1, r, 1, b); //r0 = b - Ax
+			z = r;
+			ready = true;
+		}
+
+		void nextIter() {
+			if(!ready) throw std::runtime_error("CG: call prepare() before iter()");
+			const auto Az = Op(z);
+			const double r_dot = dot(r, r);
+			const double alpha = r_dot / dot(Az, z);
+			ax_plus_by(1, x, alpha, z); 		// x = x_prv + alpha*z_prv
+			ax_plus_by(1, r, -alpha, Az);		// r = r_prv - alpha*Az_prv
+			const double beta = dot(r, r) / r_dot;
+			ax_plus_by(beta, z, 1, r);  		// z = r + beta*z_prv
+		}
+
+	};
+
 	template<class ClosedShape>
 	vector<ClosedShape> demagSimpleIter(
-		const std::function<void(vector<ClosedShape>&, vector<double>&)> &modelGenerator,
+		const std::function<void(vector<ClosedShape>&, vector<double>&, vector<Point>&)> &modelGenerator,
 		const std::function<std::unique_ptr<gFieldSolver>(const vector<ClosedShape>&)> createCudaSolver
 	) {
 		if(isRoot()) cout << "Generating model..." << endl;
 		vector<ClosedShape> hsi;
 		vector<double> K;
-		modelGenerator(hsi, K);
+		vector<Point> J0;
+		modelGenerator(hsi, K, J0);
 		if(isRoot()) cout << "Model size: " << hsi.size() << endl;
+		// return hsi;
 
-		vector<Point> J0(hsi.size());
-		transform(hsi.begin(), hsi.end(), J0.begin(), [](const auto& v) {return v.dens; });
-
-		//re-calculate J (magnetization) in every ClosedShape
-		const auto &fJn = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> &res) {
+		//re-calculate J (magnetization) in every ClosedShape (simple iteration)
+		const auto &fJn = [&createCudaSolver, &hsi, &K, &J0, this]() -> vector<Point> {
 			Bcast(hsi);
 			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
-			vector<Point> fieldPoints(res.size());
-			std::transform(hsi.cbegin(), hsi.cbegin() + fieldPoints.size(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
-			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
+			vector<Point> fieldPoints(hsi.size());
+			std::transform(hsi.cbegin(), hsi.cend(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
+			vector<Point> field(hsi.size());
+			MPIpool<Point, Point> pool(*this, fieldPoints, field, 1024);
+			// pool.logging = true;
 			int cnt = 0;
 			if (!isRoot()) {
 				while (1) {
 					const vector<Point> task = pool.getTask();
 					if (!task.size()) break;
-					cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
+					if(pool.logging) cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
 					vector<Point> result(task.size());
 					for (int i = 0; i < task.size(); ++i)
-						result[i] = solver->solve(task[i]);
+						result[i] = -solver->solve(task[i]);
 					pool.submit(result);
 				}
 			} else {
 				cout << "result gather ok" << endl;
-				for (int i = 0; i < res.size(); ++i) 
-					res[i] = -(-res[i] + hsi[i].dens * (4.*M_PI / 3.)) * K[i] * (1./(4.*M_PI)) + J0[i];
+
+				for (int i = 0; i < field.size(); ++i) 
+					field[i] = (field[i] / (4.*M_PI)) * K[i] + J0[i];
+
+				Point mean = 0;
+				for (int i = 0; i < field.size(); ++i) 
+					mean += field[i];
+				mean = mean / field.size();
+				cout << "Mean Jn+1= " << mean << endl;
+
+				return field;
 			}
+
+			return {};
 		};
+
+		// Re-calculate J (magnetization) in every ClosedShape (CG)
+		// Should be valid: 'hsi' - all nodes; x - root; result - root
+		const auto OpCG = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> x = {}) -> vector<Point> {
+			Bcast(x);
+			auto shapes{ hsi };
+			for (int i = 0; i < shapes.size(); ++i) shapes[i].dens = x[i];
+			const std::unique_ptr<gFieldSolver> solver = createCudaSolver(shapes);
+			vector<Point> fieldPoints(shapes.size());
+			std::transform(shapes.cbegin(), shapes.cend(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
+			vector<Point> res(shapes.size());
+			MPIpool<Point, Point> pool(*this, fieldPoints, res, 1024);
+			// pool.logging = true;
+			int cnt = 0;
+			if (!isRoot()) {
+				while (1) {
+					const vector<Point> task = pool.getTask();
+					if (!task.size()) break;
+					if(pool.logging) cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
+					vector<Point> result(task.size());
+					for (int i = 0; i < task.size(); ++i)
+						result[i] = -solver->solve(task[i]);
+					pool.submit(result);
+				}
+			} else {
+				if(pool.logging) cout << "result gather ok" << endl;
+				for (int i = 0; i < res.size(); ++i) 
+					res[i] = x[i] - (res[i] / (4.*M_PI)) * K[i];
+				return res;
+			}
+			return {};
+		};
+
+		vector<Point> x0(hsi.size());
+		std::transform(hsi.cbegin(), hsi.cend(), x0.begin(), [](const ClosedShape &h) {return h.dens;});
+		CG<Point> cg{J0, x0, OpCG};
 
 		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
 		const auto residualEqAndCopy = [](const vector<Point> &res, vector<ClosedShape> &hsi) {
@@ -622,31 +824,42 @@ private:
 				bool cont = false;
 				Bcast(cont);
 				if (!cont) break;
-				auto nullVect = vector<Point>();
-				fJn(nullVect);
+				//fJn();
+				OpCG();
 			}
 			cout << "Done." << endl;
 			return {};
 		}
 		
-		const double eps = 1e-4;
-		const int maxIter = 30;
-		double err = 1, prvErr = err+1;
-		for (int it = 0; it < maxIter && err > eps && err < prvErr; ++it) {
+		const double eps = 1e-3;
+		const double minRelativeErrChange = 0.05; //5%
+		const int maxIter = 10;
+		double err = 1, prvErr = err*100;
+
+		cout << "CG: preparing first iter" << endl;
+		{
+			bool cont = true;
+			Bcast(cont);
+			cg.prepare();
+		}
+
+		for (int it = 0; it < maxIter && err > eps /* && (fabs(err-prvErr) / err) > minRelativeErrChange && err < prvErr */ ; ++it) {
 			cout << "Iter: " << it << endl;
 			bool cont = true;
 			Bcast(cont);
-			vector<Point> In(hsi.size());
-			fJn(In);
-			cout << endl;
+
+			// const vector<Point> In = fJn();
+			// cout << endl;
+			cg.nextIter();
 			
 			prvErr = err;
-			err = residualEqAndCopy(In, hsi) / [&In]() {
-				double sum = 0;
-				for (auto& i: In)
-					sum += i ^ i;
-				return sqrt(sum);
-			}();
+			// err = residualEqAndCopy(In, hsi) / [&In]() {
+			// 	double sum = 0;
+			// 	for (auto& i: In)
+			// 		sum += i ^ i;
+			// 	return sqrt(sum);
+			// }();
+			err = cg.getError();
 			
 			const auto ediff = err - prvErr;
 			cout << "Err: " << err << "(" << (ediff>0?"+":"") << ediff << ")" << " at iter: " << it << endl;
@@ -654,12 +867,14 @@ private:
 		bool cont = false;
 		Bcast(cont);
 
+		for (int i = 0; i < hsi.size(); ++i) hsi[i].dens = cg.x[i];
+
 		return hsi;
 	}
 
 	template<class ClosedShape>
 	void calcDemag(
-		const std::function<void(vector<ClosedShape>&, vector<double>&)> &modelGenerator,
+		const std::function<void(vector<ClosedShape>&, vector<double>&, vector<Point>&)> &modelGenerator,
 		const Volume& v,
 		const limits& fieldDimX, const limits& fieldDimY, const double H,
 		const string& filePrefix,
@@ -677,21 +892,8 @@ private:
 
 		const auto &fOnDat = [&](Dat3D<Point> &res) {
 			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
-			
 			for (auto &i : res)
 				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
-
-			int cnt = 0;
-			for (auto &i : res) {
-				const Point p0{ i.p.x, i.p.y, i.p.z };
-				const auto el = std::find_if(hsi.cbegin(), hsi.cend(), [&](const auto& h) {return h.isIn(p0); });
-				if (el != hsi.cend()) {
-					++cnt;
-					i.val += el->dens / 3.;
-				}
-			}
-
-			return cnt;
 		};
 /*
 		Dat3D<Point> dd("cubeFieldSZ_IN.dat");
@@ -704,9 +906,7 @@ private:
 			Dat3D<Point> dat;
 			for (int i = 1; i < v.z.n; ++i)
 				dat.es.push_back({{ well.center.x, well.center.y, v.z.atWh(i) - v.z.d() / 2.}});
-			const int cnt = fOnDat(dat);
-			if (cnt != v.z.n-1)
-				cout << "WARNING! 'Inside' count: " << cnt << "/" << v.z.n << endl;
+			fOnDat(dat);
 			dat.write(fname);
 		};
 */

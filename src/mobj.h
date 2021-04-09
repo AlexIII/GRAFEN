@@ -160,6 +160,9 @@ public:
 	CUDA_HOST_DEV_FUN Point3D operator/(const T a) const {
 		return {x/a, y/a, z/a};
 	}
+	CUDA_HOST_DEV_FUN Point3D operator/(const Point3D& p) const {
+		return {x/p.x, y/p.y, z/p.z};
+	}
 	CUDA_HOST_DEV_FUN Point3D norm() const { //norm vector
 		const T tmp = eqNorm();
 		return {x/tmp, y/tmp, z/tmp};
@@ -249,14 +252,17 @@ public:
 		return ((p2-p1)*(p3-p1)).norm();
 	}
 
-	bool getSide(const Point3D<T>& p) const {
-		const T	xx1 = p.x - p1.x, yy1 = p.y - p1.y, zz1 = p.z - p1.z,
-						xx2 = p.x - p2.x, yy2 = p.y - p2.y, zz2 = p.z - p2.z,
-						xx3 = p.x - p3.x, yy3 = p.y - p3.y, zz3 = p.z - p3.z;
-		const auto& minor = [](const T a, const T b, const T c, const T d) {
-			return a*d - b*c;
-		};
-		return (xx1*minor(yy2, zz2, yy3, zz3) - yy1*minor(xx2, zz2, xx3, zz3) + zz1*minor(xx2, yy2, xx3, yy3)) > 0;
+	// bool getSide(const Point3D<T>& p) const {
+	// 	const T	xx1 = p.x - p1.x, yy1 = p.y - p1.y, zz1 = p.z - p1.z,
+	// 					xx2 = p.x - p2.x, yy2 = p.y - p2.y, zz2 = p.z - p2.z,
+	// 					xx3 = p.x - p3.x, yy3 = p.y - p3.y, zz3 = p.z - p3.z;
+	// 	const auto& minor = [](const T a, const T b, const T c, const T d) {
+	// 		return a*d - b*c;
+	// 	};
+	// 	return (xx1*minor(yy2, zz2, yy3, zz3) - yy1*minor(xx2, zz2, xx3, zz3) + zz1*minor(xx2, yy2, xx3, yy3)) > 0;
+	// }
+	bool isOnExtSide(const Point3D<T>& p) const {
+		return ((p - p1) ^ normal()) > 0;
 	}
 };
 
@@ -374,6 +380,28 @@ public:
 		}
 	}
 
+	void mirrorX() {
+		scale({-1, 1, 1});
+		std::swap(p[0], p[1]);
+		std::swap(p[2], p[3]);
+		std::swap(p[4], p[5]);
+		std::swap(p[6], p[7]);
+	}
+	void mirrorY() {
+		scale({1, -1, 1});
+		std::swap(p[0], p[2]);
+		std::swap(p[1], p[3]);
+		std::swap(p[4], p[6]);
+		std::swap(p[5], p[7]);
+	}
+	void mirrorZ() {
+		scale({1, 1, -1});
+		std::swap(p[0], p[4]);
+		std::swap(p[1], p[5]);
+		std::swap(p[2], p[6]);
+		std::swap(p[3], p[7]);
+	}
+
 	std::vector<Hexahedron> splitTo4() const {
 		const double cx = (p[0].x + p[2].x) / 2.;
 		const double cy = (p[0].y + p[1].y) / 2.;
@@ -484,12 +512,12 @@ public:
 			p[0].y > tp.y && p[7].y < tp.y &&
 			p[0].z > tp.z && p[7].z < tp.z;
 	}
-	*/
 	bool isIn(const Point& p) const {
 		for (const auto& t : splitFaces())
 			if (t.getSide(p)) return false;
 		return true;
 	}
+	*/
 private:
 	//возврещает 1 если у i-го четырехугольника нормаль внешняя, иначе -1
 	static int isExtNorm(const std::vector<Quadrangle> &qrs, const int i) {
@@ -555,6 +583,12 @@ public:
 
 			default: return Triangle<double>{};
 		}
+	}
+
+	bool isIn(const Point& p) const {
+		for (int i = 0; i < 12; ++i)
+			if (getTri(i).isOnExtSide(p)) return false;
+		return true;
 	}
 /*	
 	CUDA_HOST_DEV_FUN Point getTriNorm(const int i) const {

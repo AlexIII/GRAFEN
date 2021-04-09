@@ -9,7 +9,7 @@
 #include <mutex>
 #include <array>
 
-using KernelComputeType = double;// float;
+using KernelComputeType = float;
 
 using std::cout;
 using std::endl;
@@ -66,9 +66,9 @@ __host__ __device__ static Point intHexTr(const Point &p0, const ClosedShape &sh
 	const Point3D<T> densf(shape.dens);
 	for (int i = 0; i < shape.nTriangles; ++i) {
 		const Triangle<T> tri(shape.getTri(i));
-		auto v = intTrAn<T>(p0f, tri) * (tri.normal() ^ densf);
-		if(!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) v = {};
-		sum += v;
+		const auto v = intTrAn<T>(p0f, tri) * (tri.normal() ^ densf);
+		if(std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z))
+			sum += v;
 	}
 	return sum;
 }
