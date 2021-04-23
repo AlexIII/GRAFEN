@@ -44,11 +44,14 @@ class gFieldSolver : public cuSolver {
 public:
 	virtual Point solve(const Point &p0) = 0;
 	template<class ClosedShape>
-	static std::unique_ptr<gFieldSolver> getCUDAsolver(const ClosedShape* const qbegin, const ClosedShape* const qend);
+	static std::unique_ptr<gFieldSolver> getCUDAsolver(const ClosedShape* const qbegin, const ClosedShape* const qend, const bool transpose = false);
 	template<class ClosedShape>
 	static std::unique_ptr<gFieldSolver> getCUDAreplacingSolver(const ClosedShape* const qbegin, const ClosedShape* const qend,
 		const double dotPotentialRad, const int tirBufSz);
 	virtual ~gFieldSolver() {}
+protected:
+	gFieldSolver(const bool transpose = false) : transpose(transpose) {}
+	const bool transpose;
 };
 
 

@@ -429,12 +429,13 @@ public:
 		int nl = 20, nB = 20, nR = 20;
 
 		const double K = 0.2;
-		const Point Hprime = { 14, 14, 35 }; //~40A/m
-		// const Point Hprime = { 0, 0, 50 };
+		// const Point Hprime = { 14, 14, 35 }; //~40A/m
+		const Point Hprime = { 0, 0, 50 };
 		const auto I0 = Hprime * K;
 
 		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
 			// const auto Ipres = I0 / (1. + K/3.);	// Use known precise I
+			// ellipsoidGen(e, nl, nB, nR, Ipres, hsi);
 			ellipsoidGen(e, nl, nB, nR, I0, hsi);
 			Kmodel.assign(hsi.size(), K);
 			I0out.assign(hsi.size(), I0);
@@ -444,8 +445,8 @@ public:
 			Kmodel.assign(hsi.size(), K);
 			I0out.assign(hsi.size(), I0);
 		};
-		const auto createCudaSolver = [&](const vector<HexahedronWid>& hsi) {
-			return gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend());
+		const auto createCudaSolver = [&](const vector<HexahedronWid>& hsi, const bool transpose) {
+			return gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend(), transpose);
 			// const double replDist = 3;
 			// return gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), replDist, nl*nB*nR*8);
 		};
@@ -537,7 +538,7 @@ public:
 		// 	dd.write("elip_J_int.dat");
 		// }
 
-		const auto solver = createCudaSolver(hsi);
+		const auto solver = createCudaSolver(hsi, false);
 
 
 		const auto &fOnDat = [&](Dat3D<Point> &res) {
@@ -573,23 +574,25 @@ public:
 
 		// {
 		// 	Dat3D<Point> dd;
-		// 	for (double x = -15; x < 15; x += 0.2)
-		// 		for (double y = -15; y < 15; y += 0.2)
-		// 			dd.es.push_back({{ x, y, 1.01*e.Req}});
-		// 	fOnDat(dd);
-		// 	dd.write("elip_demag_calc.dat");
+		// 	for(int part = 0; part < 4; ++part)
+		// 		for(int layer = 0; layer < layersN; ++layer) 
+		// 			for(int li = 0; li < nl; ++li) {
+		// 				const int Bi = 0;
+		// 				const int idx = ((part * layersN) + layer) * inSz + (li * nB) + Bi;
+		// 				const auto c = hsi[idx].massCenter();
+		// 				dd.es.push_back({{c.x, c.y, c.z}, hsi[idx].dens});
+		// 			}
+		// 	dd.write("elip_J_in.dat");
 		// }
-		// {
-		// 	Dat3D<Point> dd;
-		// 	for (double x = -15; x < 15; x += 0.2)
-		// 		for (double y = -15; y < 15; y += 0.2) {
-		// 			const Point p0{ x, y, 1.01*e.Req};
-		// 			const Point val = field_sphere_H(e.Req, Ipres, p0) / (4.*M_PI);
-		// 			dd.es.push_back({{p0.x, p0.y, p0.z}, val});
-		// 		}
-		// 	dd.write("elip_demag_prec.dat");
-		// }
-
+		
+		{
+			Dat3D<Point> dd;
+			for(int i = 0; i < hsi.size(); ++i) {
+				const auto c = hsi[i].massCenter();
+				dd.es.push_back({{c.x, c.y, c.z}, hsi[i].dens});
+			}
+			dd.write("ball_J_all_in.dat");
+		}
 	}
 
 	void run(int argc, char *argv[]) {
@@ -720,7 +723,7 @@ private:
 	template<class ClosedShape>
 	vector<ClosedShape> demagSimpleIter(
 		const std::function<void(vector<ClosedShape>&, vector<double>&, vector<Point>&)> &modelGenerator,
-		const std::function<std::unique_ptr<gFieldSolver>(const vector<ClosedShape>&)> createCudaSolver
+		const std::function<std::unique_ptr<gFieldSolver>(const vector<ClosedShape>&, const bool)> createCudaSolver
 	) {
 		if(isRoot()) cout << "Generating model..." << endl;
 		vector<ClosedShape> hsi;
@@ -733,7 +736,7 @@ private:
 		//re-calculate J (magnetization) in every ClosedShape (simple iteration)
 		const auto &fJn = [&createCudaSolver, &hsi, &K, &J0, this]() -> vector<Point> {
 			Bcast(hsi);
-			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi, false);
 			vector<Point> fieldPoints(hsi.size());
 			std::transform(hsi.cbegin(), hsi.cend(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
 			vector<Point> field(hsi.size());
@@ -770,11 +773,11 @@ private:
 
 		// Re-calculate J (magnetization) in every ClosedShape (CG)
 		// Should be valid: 'hsi' - all nodes; x - root; result - root
-		const auto OpCG = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> x = {}) -> vector<Point> {
+		const auto OpCGt = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> x, const bool transpose) -> vector<Point> {
 			Bcast(x);
 			auto shapes{ hsi };
 			for (int i = 0; i < shapes.size(); ++i) shapes[i].dens = x[i];
-			const std::unique_ptr<gFieldSolver> solver = createCudaSolver(shapes);
+			const std::unique_ptr<gFieldSolver> solver = createCudaSolver(shapes, transpose);
 			vector<Point> fieldPoints(shapes.size());
 			std::transform(shapes.cbegin(), shapes.cend(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
 			vector<Point> res(shapes.size());
@@ -799,10 +802,16 @@ private:
 			}
 			return {};
 		};
+		const auto OpCG = [&OpCGt](vector<Point> x = {}) -> vector<Point> {
+			return OpCGt(OpCGt(x, false), true);
+		};
 
 		vector<Point> x0(hsi.size());
 		std::transform(hsi.cbegin(), hsi.cend(), x0.begin(), [](const ClosedShape &h) {return h.dens;});
-		CG<Point> cg{J0, x0, OpCG};
+		if(isRoot()) cout << "Calc A^T(b)" << endl;
+		vector<Point> b = OpCGt(J0, true);
+		Bcast(b);
+		CG<Point> cg{b, x0, OpCG};
 
 		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
 		const auto residualEqAndCopy = [](const vector<Point> &res, vector<ClosedShape> &hsi) {
@@ -816,7 +825,7 @@ private:
 		};
 
 		
-		cout << "Demag Solving..." << endl;
+		if(isRoot()) cout << "Demag Solving..." << endl;
 
 		// Not Root will do calculations here
 		if (!isRoot()) {
@@ -827,6 +836,7 @@ private:
 				//fJn();
 				OpCG();
 			}
+			OpCGt({}, false);
 			cout << "Done." << endl;
 			return {};
 		}
@@ -864,8 +874,17 @@ private:
 			const auto ediff = err - prvErr;
 			cout << "Err: " << err << "(" << (ediff>0?"+":"") << ediff << ")" << " at iter: " << it << endl;
 		}
+
 		bool cont = false;
 		Bcast(cont);
+
+		{
+			cout << "Calc True Err..." << endl;
+			vector<Point> a = OpCGt(cg.x, false);
+			cg.ax_plus_by(-1, a, 1, J0);
+			const double trueErr =  sqrt(cg.dot(a, a) / cg.dot(J0, J0));
+			cout << "True Err: " << trueErr << endl;
+		}
 
 		for (int i = 0; i < hsi.size(); ++i) hsi[i].dens = cg.x[i];
 
@@ -880,9 +899,9 @@ private:
 		const string& filePrefix,
 		const double DPR
 	) {
-		const auto createCudaSolver = [&DPR](const vector<ClosedShape>& hsi) {
+		const auto createCudaSolver = [&DPR](const vector<ClosedShape>& hsi, const bool transpose) {
 			return	DPR < 0
-				? gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend())
+				? gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend(), transpose)
 				: gFieldSolver::getCUDAreplacingSolver(&*hsi.cbegin(), &*hsi.cend(), DPR, hsi.size())
 			;
 		};
@@ -891,7 +910,7 @@ private:
 		if(!isRoot()) return;
 
 		const auto &fOnDat = [&](Dat3D<Point> &res) {
-			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi, false);
 			for (auto &i : res)
 				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
 		};
@@ -914,7 +933,7 @@ private:
 		//calculate field on a plane of heigh 'H' above model and save to 'fname'_x.dat, 'fname'_y.dat, 'fname'_z.dat
 		const auto &fOn = [&createCudaSolver, &hsi, &H, &fieldDimX, &fieldDimY](const string fname) {
 			Field x{ fieldDimX, fieldDimY }, y{ x }, z{ x };
-			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi);
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi, false);
 			int pp = -1;
 			for (int i = 0; i < x.y.n; ++i) {
 				for (int j = 0; j < x.x.n; ++j) {
