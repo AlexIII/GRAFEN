@@ -528,7 +528,11 @@ void saveAsDat(const vector<HexahedronWid, VAlloc> &hsi) {
 
 int topogravMain(int argc, char *argv[]) {
 
-	const auto& sectionStopwatch = [](const string& sectionName, const std::function<void(void)>& section) {
+	const auto& sectionStopwatch = [](const string& sectionName, const std::function<void(void)>& section, const bool print = true) {
+		if(!print) {
+			section();
+			return;
+		}
 		cout << sectionName << " started" << endl;
 		Stopwatch tmr;
 		tmr.start();
@@ -592,7 +596,7 @@ int topogravMain(int argc, char *argv[]) {
 				? calcFieldNodeOpts{ GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal } }
 				: calcFieldNodeOpts{ GeoNormOpts{ inp.refEllipsoid, inp.normal } }
 			, qss, fieldDat, inp.pprr);
-		});
+		}, cs.isRoot());
 
 		//save result
 		if (cs.isRoot())
