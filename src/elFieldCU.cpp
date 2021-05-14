@@ -773,7 +773,7 @@ private:
 
 		// Re-calculate J (magnetization) in every ClosedShape (CG)
 		// Should be valid: 'hsi' - all nodes; x - root; result - root
-		const auto OpCGt = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> x, const bool transpose) -> vector<Point> {
+		const auto OpCGt = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> x = {}, const bool transpose = false) -> vector<Point> {
 			Bcast(x);
 			auto shapes{ hsi };
 			for (int i = 0; i < shapes.size(); ++i) shapes[i].dens = x[i];
@@ -802,16 +802,10 @@ private:
 			}
 			return {};
 		};
-		const auto OpCG = [&OpCGt](vector<Point> x = {}) -> vector<Point> {
-			return OpCGt(OpCGt(x, false), true);
-		};
 
 		vector<Point> x0(hsi.size());
 		std::transform(hsi.cbegin(), hsi.cend(), x0.begin(), [](const ClosedShape &h) {return h.dens;});
-		if(isRoot()) cout << "Calc A^T(b)" << endl;
-		vector<Point> b = OpCGt(J0, true);
-		Bcast(b);
-		CG<Point> cg{b, x0, OpCG};
+		CG<Point> cg{J0, x0, OpCGt};
 
 		//calculate residual ||res[] - hsi.dens[]|| and copy res[] to hsi.dens[]
 		const auto residualEqAndCopy = [](const vector<Point> &res, vector<ClosedShape> &hsi) {
@@ -834,14 +828,13 @@ private:
 				Bcast(cont);
 				if (!cont) break;
 				//fJn();
-				OpCG();
+				OpCGt();
 			}
-			OpCGt({}, false);
 			cout << "Done." << endl;
 			return {};
 		}
 		
-		const double eps = 1e-3;
+		const double eps = 1e-4;
 		const double minRelativeErrChange = 0.05; //5%
 		const int maxIter = 10;
 		double err = 1, prvErr = err*100;
@@ -877,14 +870,6 @@ private:
 
 		bool cont = false;
 		Bcast(cont);
-
-		{
-			cout << "Calc True Err..." << endl;
-			vector<Point> a = OpCGt(cg.x, false);
-			cg.ax_plus_by(-1, a, 1, J0);
-			const double trueErr =  sqrt(cg.dot(a, a) / cg.dot(J0, J0));
-			cout << "True Err: " << trueErr << endl;
-		}
 
 		for (int i = 0; i < hsi.size(); ++i) hsi[i].dens = cg.x[i];
 
