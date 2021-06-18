@@ -13,6 +13,7 @@ using std::endl;
 
 #define BLOCK_SZ 32
 #define MAX_DEV 16
+#define SMALL_ESP (1e-10)
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value)
 
@@ -28,32 +29,29 @@ __host__ __device__ double intTrAn(const Point &q, const Triangle &t) {
 	const Point A12 = a12.norm();
 	const Point A23 = a23.norm();
 
-	double tmp1 = (A31^a3) + sqrt(a3^a3);
+	const double tmp1 = (A31^a3) + sqrt(a3^a3);
 	double uln1 = ((A31^a1) + sqrt(a1^a1)) / tmp1;
-	if (tmp1 > 1e-10 && uln1 >= 0) {
+	if (tmp1 > SMALL_ESP && uln1 > SMALL_ESP) {
 		uln1 = (a1 ^ (A31*K))*log(uln1);
-	}
-	else {
+	} else {
 		uln1 = (-(A31^a1) + sqrt(a1^a1)) / (-(A31^a3) + sqrt(a3^a3));
 		uln1 = -(a1 ^ (A31*K))*log(uln1);
 	}
 
-	double tmp2 = (A12^a1) + sqrt(a1^a1);
+	const double tmp2 = (A12^a1) + sqrt(a1^a1);
 	double uln2 = ((A12^a2) + sqrt(a2^a2)) / tmp2;
-	if (tmp2 > 1e-10 && uln2 >= 0) {
+	if (tmp2 > SMALL_ESP && uln2 > SMALL_ESP) {
 		uln2 = (a2 ^ (A12*K))*log(uln2);
-	}
-	else {
+	} else {
 		uln2 = (-(A12^a2) + sqrt(a2^a2)) / (-(A12^a1) + sqrt(a1^a1));
 		uln2 = -(a2 ^ (A12*K))*log(uln2);
 	}
 
-	double tmp3 = (A23^a2) + sqrt(a2^a2);
+	const double tmp3 = (A23^a2) + sqrt(a2^a2);
 	double uln3 = ((A23^a3) + sqrt(a3^a3)) / tmp3;
-	if (tmp3 > 1e-10 && uln3 >= 0) {
+	if (tmp3 > SMALL_ESP && uln3 > SMALL_ESP) {
 		uln3 = (a3 ^ (A23*K))*log(uln3);
-	}
-	else {
+	} else {
 		uln3 = (-(A23^a3) + sqrt(a3^a3)) / (-(A23^a2) + sqrt(a2^a2));
 		uln3 = -(a3 ^ (A23*K))*log(uln3);
 	}

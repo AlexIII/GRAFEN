@@ -11,6 +11,7 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+#include <numeric>
 #include <boost/variant.hpp>
 #include <boost/optional.hpp>
 #include "mobj.h"
@@ -32,9 +33,7 @@ using GeographicLib::TransverseMercator;
 #define G_CONST -6.67408
 #define MB (1024*1024)		//bytes in megabyte
 
-#define MIN_DENS 1e-8
-
-#define MOVE_FIELD_POINT_XYZ 0.000001
+#define MOVE_POINT_EPS (1e-8)
 
 #define Assert(exp) do { if (!(exp)) throw std::runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
 
@@ -69,10 +68,10 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 	return std::min(v1, v2);
 }
 
-//{B in deg, l in deg, z} -> {E, N, z} in km
+//{B in deg, l in deg, z} -> {E, N, z} in km, l0 in Rad
 Point GeoToGK(const TransverseMercator &proj, const double l0, const double B, const double l, const double z) {
 	Point p{0, 0, z};
-	proj.Forward(l0, B, l, p.x, p.y);
+	proj.Forward(toDeg(l0), B, l, p.x, p.y);
 	p.x /= 1000.;
 	p.y /= 1000.;
 	p.x = xToGK(p.x, l0);
@@ -148,21 +147,27 @@ void makeHexsTopoFlatCuboids(const double l0, const Ellipsoid &e, const Grid &to
 }
 
 //construct spherical density model from topography model (mesh nodes in degrees)
-//topo - mesh in deg, height in km
+//topo - mesh in deg (geographic coord), height in km
 template <class VAlloc>
-void makeHexsTopo(const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+void makeHexsTopoGeo(const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
 	hsi.resize(xN * yN);
 
 #pragma omp parallel for
 	for(int yi = 0; yi < yN; ++yi)
 		for (int xi = 0; xi < xN; ++xi) {
+			double h0 = topo.at(xi + 1, yi + 1), h1 = topo.at(xi + 1, yi), h2 = topo.at(xi, yi + 1), h3 = topo.at(xi, yi);
+			if(h0 <= 0) h0 = MOVE_POINT_EPS;
+			if(h1 <= 0) h1 = MOVE_POINT_EPS;
+			if(h2 <= 0) h2 = MOVE_POINT_EPS;
+			if(h3 <= 0) h3 = MOVE_POINT_EPS;
+
 			const Hexahedron h({
 				//above
-				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi + 1)), topo.at(xi + 1, yi + 1)),	//top right
-				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi + 1)), topo.at(xi + 1, yi)), //bottom right
-				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi)), topo.at(xi, yi + 1)), //top left
-				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi)), topo.at(xi, yi)), //bottom left
+				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi + 1)), h0),	//top right
+				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi + 1)), h1), //bottom right
+				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi)), h2), //top left
+				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi)), h3), //bottom left
 				//below
 				e.getPoint(toRad(topo.yAt(yi + 1)), toRad(topo.xAt(xi + 1)), 0),	//top right
 				e.getPoint(toRad(topo.yAt(yi)), toRad(topo.xAt(xi + 1)), 0), //bottom right
@@ -171,6 +176,49 @@ void makeHexsTopo(const Ellipsoid &e, const Grid &topo, const double dens, vecto
 			}, dens);
 
 			hsi[yi*xN + xi] = HexahedronWid(h);
+		}
+}
+
+//construct spherical density model from topography model (mesh nodes in degrees)
+//topo - mesh in km (GK coord), height in km
+template <class VAlloc>
+void makeHexsTopoGK(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
+	hsi.resize(xN * yN);
+
+	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	auto GKtoGeo = [&](const double N, double E) -> std::pair<double, double> {
+		std::pair<double, double> lb;
+		E = xFromGK(E, l0);
+		proj.Reverse(toDeg(l0), E*1000., N*1000., lb.second, lb.first);
+		lb.first = toRad(lb.first);
+		lb.second = toRad(lb.second);
+		return lb;
+	};
+
+#pragma omp parallel for
+	for(int yi = 0; yi < yN; ++yi)
+		for (int xi = 0; xi < xN; ++xi) {
+			double h0 = topo.at(xi + 1, yi + 1), h1 = topo.at(xi + 1, yi), h2 = topo.at(xi, yi + 1), h3 = topo.at(xi, yi);
+			if(h0 <= 0) h0 = MOVE_POINT_EPS;
+			if(h1 <= 0) h1 = MOVE_POINT_EPS;
+			if(h2 <= 0) h2 = MOVE_POINT_EPS;
+			if(h3 <= 0) h3 = MOVE_POINT_EPS;
+			
+			const Hexahedron hex({
+				//above
+				e.getPoint(GKtoGeo(topo.yAt(yi + 1), topo.xAt(xi + 1)), h0),	//top right
+				e.getPoint(GKtoGeo(topo.yAt(yi), topo.xAt(xi + 1)), h1), 		//bottom right
+				e.getPoint(GKtoGeo(topo.yAt(yi + 1), topo.xAt(xi)), h2), 		//top left
+				e.getPoint(GKtoGeo(topo.yAt(yi), topo.xAt(xi)), h3), 			//bottom left
+				//below
+				e.getPoint(GKtoGeo(topo.yAt(yi + 1), topo.xAt(xi + 1)), 0),		//top right
+				e.getPoint(GKtoGeo(topo.yAt(yi), topo.xAt(xi + 1)), 0), 		//bottom right
+				e.getPoint(GKtoGeo(topo.yAt(yi + 1), topo.xAt(xi)), 0), 		//top left
+				e.getPoint(GKtoGeo(topo.yAt(yi), topo.xAt(xi)), 0), 			//bottom left
+			}, dens);
+			
+			hsi[yi*xN + xi] = HexahedronWid(hex);
 		}
 }
 
@@ -275,7 +323,10 @@ void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> 
 		void operator()(const GKNormOpts& opts) const {
 			const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
 			for (size_t i = 0; i < fp.size(); ++i) {
-				const Dat3D::Point &p = fp[i];
+				Dat3D::Point p = fp[i];
+				p.x += MOVE_POINT_EPS;
+				p.y += MOVE_POINT_EPS;
+				p.z += MOVE_POINT_EPS;
 				double l, B;
 				double x = xFromGK(p.x, opts.l0);
 				proj.Reverse(toDeg(opts.l0), x*1000., p.y*1000., B, l);
@@ -290,9 +341,9 @@ void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> 
 			for (size_t i = 0; i < fp.size(); ++i) {
 				const Dat3D::Point &p = fp[i];
 				Point p0 = opts.e.getPoint(toRad(p.y), toRad(p.x), p.z);
-				p0.x += MOVE_FIELD_POINT_XYZ;
-				p0.y += MOVE_FIELD_POINT_XYZ;
-				p0.z += MOVE_FIELD_POINT_XYZ;
+				p0.x += MOVE_POINT_EPS;
+				p0.y += MOVE_POINT_EPS;
+				p0.z += MOVE_POINT_EPS;
 				const Point n0 = opts.n ? *opts.n : opts.e.getNormal(toRad(p.y), toRad(p.x));
 				result[i] += G_CONST * solver->solve(p0, n0);
 			}
@@ -302,9 +353,9 @@ void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> 
 			for (size_t i = 0; i < fp.size(); ++i) {
 				const Dat3D::Point &p = fp[i];
 				Point p0 = GeoToGK(proj, opts.l0, p.y, p.x, p.z);
-				p0.x += MOVE_FIELD_POINT_XYZ;
-				p0.y += MOVE_FIELD_POINT_XYZ;
-				p0.z += MOVE_FIELD_POINT_XYZ;
+				p0.x += MOVE_POINT_EPS;
+				p0.y += MOVE_POINT_EPS;
+				p0.z += MOVE_POINT_EPS;
 				const Point n0 = opts.n ? *opts.n : Point{ 0, 0, 1 }; //in z direction
 				result[i] += G_CONST * solver->solve(p0, n0);
 			}
@@ -558,17 +609,30 @@ int topogravMain(int argc, char *argv[]) {
 		gElementsShared &qss = cs.initShared(qAm); //for direct solver. Should not actually allocate memory untill resize().
 		cout << "Allocated." << endl;
 
+		if(inp.flatMode && inp.gridsInGK) {
+			throw std::runtime_error("Mode not supported");
+		}
 
 		//preprocessing
 		if(cs.isLocalRoot()) 
 			sectionStopwatch("Preprocessing", [&](){ 
 				inp.flatMode
 					? makeHexsTopoFlatCuboids(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss)
-					: makeHexsTopo(inp.refEllipsoid, topoGrid, inp.dens, qss);
+					: inp.gridsInGK
+						? makeHexsTopoGK(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss)
+						: makeHexsTopoGeo(inp.refEllipsoid, topoGrid, inp.dens, qss);
 			});
+		if(cs.isRoot()) {
+			const size_t qSize = qss.size();
+			cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
+			const double meanDens = [&](){
+					double sum = 0;
+					for(auto &q: qss) sum += q.dens;
+					return sum;
+				}() / double(qss.size());
+			cout << "Mean density: " << meanDens << endl;
+		}
 		cs.Barrier();
-		const size_t qSize = qss.size();
-		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
 
 		/*
 		Dat2D td = GDconv::toDat(topoGrid);
@@ -593,14 +657,17 @@ int topogravMain(int argc, char *argv[]) {
 			//do the job
 			cs.calcField(
 				inp.flatMode
-				? calcFieldNodeOpts{ GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal } }
-				: calcFieldNodeOpts{ GeoNormOpts{ inp.refEllipsoid, inp.normal } }
+					? calcFieldNodeOpts{ GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal } }
+					:  inp.gridsInGK
+						? calcFieldNodeOpts{ GKNormOpts{ inp.refEllipsoid, inp.l0, inp.normal } }
+						: calcFieldNodeOpts{ GeoNormOpts{ inp.refEllipsoid, inp.normal } }
 			, qss, fieldDat, inp.pprr);
 		}, cs.isRoot());
 
 		//save result
-		if (cs.isRoot())
+		if (cs.isRoot()) {
 			GDconv::toGrd(fieldDat, topoGrid.nCol, topoGrid.nRow).Write(inp.gravGridFname);
+		}
 
 	} catch (std::exception &ex) {
 		cout << "Global exception: " << ex.what() << endl;
