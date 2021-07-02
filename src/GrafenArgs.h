@@ -148,8 +148,11 @@ public:
 		if(!noInvFileOrder) std::sort(fnames.begin(), fnames.end(), std::less<>());
 		else std::sort(fnames.begin(), fnames.end(), std::greater<>());
 		dens.clear();
-		for (auto &i : fnames)
-			dens.push_back(Grid(i).data);
+		for (auto &i : fnames) {
+			Grid g(i);
+			g.setBlanksTo(g.mean()); //Set blanks to mean
+			dens.push_back(g.data);
+		}
 	}
 
 private:
