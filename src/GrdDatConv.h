@@ -10,8 +10,7 @@ public:
 		for (int y = 0; y < g.nRow; ++y)
 			for (int x = 0; x < g.nCol; ++x)
 				dat.es.push_back({
-					g.xLL + x*g.xSize,
-					g.yLL + y*g.ySize,
+					{ g.xLL + x*g.xSize, g.yLL + y*g.ySize },
 					g.data[y*g.nCol+x]
 				});
 		return dat;

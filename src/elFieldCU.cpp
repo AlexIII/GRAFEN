@@ -60,7 +60,7 @@ double xFromGK(const double x, const double l0) {
 	return x - (zone*1e3 + 5e2);
 }
 
-//estimate approximate buffer size for the Hexahedrons that can't be replaced by singular source
+//estimate approximate buffer size for the Hexahedrons that can't be replaced by a singular source
 int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, const double r) {
 	auto f = [&](const limits &lim)->int {return (int)ceil(1.62*r*double(lim.n) / lim.width()); };
 	const int v1 = f(Nlim)*f(Elim)*f(Hlim);
@@ -222,18 +222,72 @@ void makeHexsTopoGK(const double l0, const Ellipsoid &e, const Grid &topo, const
 		}
 }
 
-//split dencity model to Hexahedrons
-template <class VAlloc>
-void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, limits Hlim,
-	const vector<vector<double>> &dens, vector<HexahedronWid, VAlloc> &hsi) {
+template <class VectorIterator>
+size_t makeHexsTopoFlatCuboidsGK(const double l0, const Ellipsoid &e, limits Nlim, limits Elim,
+		const vector<double> &heights, const vector<double> &dens, 
+		VectorIterator hsiBegin, VectorIterator hsiEnd) {
 
 	Nlim = { Nlim.lower - Nlim.dWh() / 2.,  Nlim.upper + Nlim.dWh() / 2., Nlim.n };
 	Elim = { Elim.lower - Elim.dWh() / 2.,  Elim.upper + Elim.dWh() / 2., Elim.n };
 
-	cout << "grid E (x): " << Elim << " " << Elim.d() << endl;
-	cout << "grid N (y): " << Nlim << " " << Nlim.d() << endl;
-	hsi.resize(Hlim.n*Nlim.n*Elim.n);
+	const size_t hsiSize = Nlim.n*Elim.n;
+	if(hsiEnd - hsiBegin < hsiSize)
+		throw std::runtime_error("makeHexsTopoFlatCuboidsGK(): small hsi buffer size");
 
+	const TransverseMercator proj(e.Req*1000., e.f, 1);
+
+	auto GKtoGeo = [&](const double N, double E) -> std::pair<double, double> {
+		std::pair<double, double> lb;
+		E = xFromGK(E, l0);
+		proj.Reverse(toDeg(l0), E*1000., N*1000., lb.second, lb.first);
+		lb.first = toRad(lb.first);
+		lb.second = toRad(lb.second);
+		return lb;
+	};
+
+	const double lowLevel = 0;
+
+	auto Kr = [&](const int Ni, const int Ei) {
+		double height = heights[Ni*Elim.n + Ei];
+		if(height <= lowLevel) height = lowLevel + MOVE_POINT_EPS;
+
+		Hexahedron h({
+			e.getPoint(GKtoGeo(Nlim.at(Ni + 1), Elim.at(Ei + 1)), height),
+			e.getPoint(GKtoGeo(Nlim.at(Ni), Elim.at(Ei + 1)), height),
+			e.getPoint(GKtoGeo(Nlim.at(Ni + 1), Elim.at(Ei)), height),
+			e.getPoint(GKtoGeo(Nlim.at(Ni), Elim.at(Ei)), height),
+
+			e.getPoint(GKtoGeo(Nlim.at(Ni + 1), Elim.at(Ei + 1)), lowLevel),
+			e.getPoint(GKtoGeo(Nlim.at(Ni), Elim.at(Ei + 1)), lowLevel),
+			e.getPoint(GKtoGeo(Nlim.at(Ni + 1), Elim.at(Ei)), lowLevel),
+			e.getPoint(GKtoGeo(Nlim.at(Ni), Elim.at(Ei)), lowLevel)
+		}, dens[Ni*Elim.n + Ei]);
+
+		hsiBegin[Ni*Elim.n + Ei] = HexahedronWid(h);
+	};
+
+	for (size_t Ni = 0; Ni < Nlim.n; ++Ni)
+		for (size_t Ei = 0; Ei < Elim.n; ++Ei)
+			Kr(Ni, Ei);
+
+	return hsiSize;
+}
+		
+//split dencity model to Hexahedrons
+template <class VectorIterator>
+size_t makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, limits Hlim,
+	const vector<vector<double>> &dens, 
+	VectorIterator hsiBegin, VectorIterator hsiEnd) {
+	
+	Nlim = { Nlim.lower - Nlim.dWh() / 2.,  Nlim.upper + Nlim.dWh() / 2., Nlim.n };
+	Elim = { Elim.lower - Elim.dWh() / 2.,  Elim.upper + Elim.dWh() / 2., Elim.n };
+
+	// cout << "grid E (x): " << Elim << " " << Elim.d() << endl;
+	// cout << "grid N (y): " << Nlim << " " << Nlim.d() << endl;
+	
+	const size_t hsiSize = Hlim.n*Nlim.n*Elim.n;
+	if(hsiEnd - hsiBegin < hsiSize)
+		throw std::runtime_error("makeHexs(): small hsi buffer size");
 
 	const TransverseMercator proj(e.Req*1000., e.f, 1);
 
@@ -258,7 +312,7 @@ void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, lim
 			e.getPoint(GKtoGeo(Nlim.at(Ni), Elim.at(Ei)), Hlim.at(Hi))
 		}, dens[Hi][Ni*Elim.n + Ei]);
 
-		hsi[(Hi*Nlim.n + Ni)*Elim.n + Ei] = HexahedronWid(h);
+		hsiBegin[(Hi*Nlim.n + Ni)*Elim.n + Ei] = HexahedronWid(h);
 	};
 
 #pragma omp parallel for
@@ -267,6 +321,7 @@ void makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, lim
 			for (size_t Ei = 0; Ei < Elim.n; ++Ei)
 				Kr(Hi, Ni, Ei);
 
+	return hsiSize;
 }
 
 //calculate transpose gravity field operator on a single node
@@ -480,84 +535,100 @@ private:
 	}
 };
 
+
 int grafenMain(int argc, char *argv[]) {
 	try {
 		ClusterSolver cs;
-		Ellipsoid Earth(DEF_R_EQ, DEF_R_PL);
 
 		//gElements qs;
 		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
-		GrafenArgs inp(argc, argv);
+		GrafenArgs inp(argc, argv, cs.isRoot());
 
-		const size_t qAm = getHexAm(inp.Nlim.n, inp.Elim.n, inp.Hlim.n);
+		const size_t qAm = getHexAm(inp.Nlim.n, inp.Elim.n, inp.Hlim.n + (inp.withTopo? 1 : 0));
 		cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";
 		cout << "Elements: " << qAm << endl;
 		gElementsShared &qss = cs.initShared(qAm);//for direct solver. Should not actually allocate memory untill resize().
 		gElements qs; //for transpose solver
-		cout << "Allocated." << endl;
 
-		const auto& prep = [&](const auto& f) {
+		const auto& makeHexsPreprocess = [&inp, &qAm](auto& hsi) {
 			cout << "Preprocessing started" << endl;
 			Stopwatch tmr;
 			tmr.start();
-			f();
+
+			hsi.resize(qAm);
+			cout << "Allocated." << endl;
+			size_t hsiOffest = 0;
+			if(inp.withTopo) {
+				hsiOffest += makeHexsTopoFlatCuboidsGK(inp.l0, inp.refEllipsoid, inp.Nlim, inp.Elim, inp.topoHeights, inp.topoDens, hsi.begin() + hsiOffest, hsi.end());
+			}
+			hsiOffest += makeHexs(inp.l0, inp.refEllipsoid, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, hsi.begin() + hsiOffest, hsi.end()); 
+
+			if(hsiOffest != hsi.size())
+				throw std::runtime_error("Preprocessing: hsi was incorrect");
+
 			const double time = tmr.stop();
 			cout << "Preprocessing finished: " << time << "sec." << endl;
 		};
 		
 		//prepocessing for direct solver
-		if (cs.isLocalRoot() && !inp.trasSolver)
-			prep([&]() {makeHexs(inp.l0, Earth, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, qss); });
+		if (!inp.trasSolver && cs.isLocalRoot()) {
+			makeHexsPreprocess(qss);
+		}
 		//prepocessing for transpose solver
-		if (cs.isRoot() && inp.trasSolver)
-			prep([&]() {makeHexs(inp.l0, Earth, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, qs); });
+		else if (inp.trasSolver && cs.isRoot()) {
+			makeHexsPreprocess(qs);
+		}
 		cs.Barrier();
 		const size_t qSize = inp.trasSolver ? qs.size() : qss.size();
-		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
+		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << " (" << qSize << " elements)" << endl;
 
 		if (inp.trasSolver) {
+			// ----- TRANSPOSE SOLVER
 			vector<double> res;
 			if (cs.isRoot()) {
 				cout << "TRANSPOSE SOLVER. Your *.grd files will be overwritten!" << endl;
 				res.resize(qs.size());
 			}
 			Stopwatch tmr;
-			cs.calcTrans(Earth, inp.l0, qs, inp.dat, res, inp.dotPotentialRad);
+			cs.calcTrans(inp.refEllipsoid, inp.l0, qs, inp.dat, res, inp.dotPotentialRad);
 			if (cs.isRoot()) {
-				cout << "time: " << tmr.stop() << endl;
-
+				cout << "Computing finished: " << tmr.stop() << "sec." << endl << endl;
+				const size_t layersOffset = inp.withTopo? 1 : 0;
 				const size_t lsize = inp.Nlim.n*inp.Elim.n;
-				for (size_t i = 0; i < inp.Hlim.n; ++i) {
-					Grid g(inp.fnames[i]);
-					g.data.assign(res.cbegin() + i*lsize, res.cbegin() + (i + 1)*lsize);
+				if(layersOffset) {
+					Grid g(inp.topoDensFname);
+					g.data.assign(res.cbegin(), res.cbegin() + lsize);
 					g.Write();
 				}
-
-				cout << "Done" << endl;
+				for (size_t i = 0; i < inp.Hlim.n; ++i) {
+					Grid g(inp.fnames[i]);
+					g.data.assign(res.cbegin() + (i + layersOffset)*lsize, res.cbegin() + (i + layersOffset + 1)*lsize);
+					g.Write();
+				}
 			}
-			return 0;
+		} else {
+			// ----- DIRECT SOLVER
+			if (cs.isRoot()) {
+				inp.dat.set(0);
+				cout << "Clearing output file. Do NOT stop me!" << endl;
+				if(!inp.grdFile) inp.dat.write(inp.dat2D);
+				cout << "Clearing done. You may ctrl+c now." << endl;
+			}
+			cout << "DIRECT SOLVER" << endl;
+			Stopwatch tmr;
+			tmr.start();
+			//set approximate size of buffer
+			cs.triBufferSize = triBufferSize(inp.Nlim, inp.Elim, inp.withTopo? limits{inp.Hlim.lower, inp.Hlim.upper + inp.Hlim.d(), inp.Hlim.n + 1} : inp.Hlim, inp.dotPotentialRad);
+			//do the job
+			cs.calcField(GKNormOpts{ inp.refEllipsoid, inp.l0 }, qss, inp.dat, inp.dotPotentialRad);
+			if (cs.isRoot()) {
+				cout << "Computing finished: " << tmr.stop() << "sec." << endl << endl;
+				if (!inp.grdFile) inp.dat.write(inp.dat2D);
+				else GDconv::toGrd(inp.dat, inp.grdCols, inp.grdRows).Write(inp.grdFname);
+			}
 		}
 
-		if (cs.isRoot()) {
-			inp.dat.set(0);
-			cout << "Clearing output file. Do NOT stop me!" << endl;
-			if(!inp.grdFile) inp.dat.write(inp.dat2D);
-			cout << "Clearing done. You may ctrl+c now." << endl;
-		}
-
-		cout << "Computing started" << endl;
-		Stopwatch tmr;
-		tmr.start();
-		//set approximate size of buffer
-		cs.triBufferSize = triBufferSize(inp.Nlim, inp.Elim, inp.Hlim, inp.dotPotentialRad);
-		//do the job
-		cs.calcField(GKNormOpts{ Earth, inp.l0 }, qss, inp.dat, inp.dotPotentialRad);
-		const double time = tmr.stop();
-		if (cs.isRoot()) {
-			cout << "Computing finished: " << time << "sec." << endl << endl;
-			if (!inp.grdFile) inp.dat.write(inp.dat2D);
-			else GDconv::toGrd(inp.dat, inp.grdCols, inp.grdRows).Write(inp.grdFname);
-		}
+		cout << "Done" << endl;
 	} catch (std::exception &ex) {
 		cout << "Global exception: " << ex.what() << endl;
 		return 1;
@@ -575,7 +646,6 @@ void saveAsDat(const vector<HexahedronWid, VAlloc> &hsi) {
 			dat.es.push_back({ { hsi[i].p[pi].x, hsi[i].p[pi].y, hsi[i].p[pi].z}, hsi[i].dens });
 	dat.write("shape.dat");
 }
-
 
 int topogravMain(int argc, char *argv[]) {
 
@@ -678,6 +748,6 @@ int topogravMain(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
-	//return grafenMain(argc, argv);
-	return topogravMain(argc, argv);
+	return grafenMain(argc, argv);
+	// return topogravMain(argc, argv);
 }

@@ -180,7 +180,7 @@ public:
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
 		if (dotPotentialRad < -1e-6) cout << "Precise computing" << endl;
-		else if (dotPotentialRad > 1e-6) cout << "Selective computing" << endl;
+		else if (dotPotentialRad > 1e-6) cout << "Adaptive precision computing" << endl;
 		else cout << "Imprecise computing" << endl;
 	}
 

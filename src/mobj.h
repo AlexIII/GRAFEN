@@ -21,6 +21,9 @@
 using std::abs;
 using std::sqrt;
 
+#define EARTH_R_EQ 6378.245		//equatorial radius in km
+#define EARTH_R_PL 6356.863		//polar radius in km
+
 #if defined(__HIPCC__)
 #include <hip/hip_runtime.h>
 #endif
@@ -53,6 +56,13 @@ struct limits {
 
 	void scale(const double s) { lower *= s; upper *= s; }
 	double width() const { return upper - lower; }
+
+	bool operator==(const limits& l) const {
+		return l.lower == lower && l.upper == upper && l.n == n;
+	}
+	bool operator!=(const limits& l) const { 
+		return !(l == *this); 
+	}
 
 	CUDA_HOST_DEV_FUN int indd(const double v) const {
 		return (int)floor(indR(v));

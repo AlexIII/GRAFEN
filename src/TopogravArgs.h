@@ -13,26 +13,23 @@ using std::cout;
 using std::endl;
 using std::istringstream;
 
-#define DEF_R_EQ 6378.245		//equatorial radius in km
-#define DEF_R_PL 6356.863		//polar radius in km
-
 class TopogravArgs {
 public:
 	//input options
-	std::string topoGridFname; 						// -topoGrd7 *string*
-	std::string gravGridFname; 						// -gravGrd7 *string*
-	double dens; 									// -dens *number*
-	Ellipsoid refEllipsoid{ DEF_R_EQ, DEF_R_PL }; 	// -Rpol *number* -Req *number*
-	double pprr = -1;								// -DPR *number*
-														// < 0 - exact calculations
-														// == 0 - approximate calculations
-														// > 0 - point-potential replacement radius
-	boost::optional<Point> normal; 					// -nx *number* -ny *number* -nz *number* 
-	bool flatMode = false;							// -flat don't use spherical model
-	double l0 = 0;									// -l0 *in deg* (converted to rad)
-														// (for flat mode and if grids in GK)
-	std::vector<int> gpuIdMap{};					// -gpuIdMap 0,2,4
-	bool gridsInGK = false;							// -gridsInGK
+	std::string topoGridFname; 							// -topoGrd7 *string*
+	std::string gravGridFname; 							// -gravGrd7 *string*
+	double dens; 										// -dens *number*
+	Ellipsoid refEllipsoid{ EARTH_R_EQ, EARTH_R_PL }; 	// -Rpol *number* -Req *number*
+	double pprr = -1;									// -DPR *number*
+															// < 0 - exact calculations
+															// == 0 - approximate calculations
+															// > 0 - point-potential replacement radius
+	boost::optional<Point> normal; 						// -nx *number* -ny *number* -nz *number* 
+	bool flatMode = false;								// -flat don't use spherical model
+	double l0 = 0;										// -l0 *in deg* (converted to rad)
+															// (for flat mode and if grids in GK)
+	std::vector<int> gpuIdMap{};						// -gpuIdMap 0,2,4
+	bool gridsInGK = false;								// -gridsInGK
 
 	TopogravArgs(int argc, char *argv[]) {
 		InputParser ip(argc, argv);

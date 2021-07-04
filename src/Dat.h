@@ -71,6 +71,13 @@ public:
 		fileName = dat2D.fileName;
 	}
 
+	template<typename T = const Dat<DatPoint2D>>
+	void set(std::enable_if_t<std::is_same_v<PointType, DatPoint3D>, T> dat2D) {
+		es.resize(dat2D.es.size());
+		transform(dat2D.es.cbegin(), dat2D.es.cend(), es.cbegin(), es.begin(), [](const auto &e, const auto &cur) {return Element{ Point{e.p.x, e.p.y, e.val}, cur.val }; });
+		fileName = dat2D.fileName;
+	}
+
 	std::vector<Point> getPoints() const {
 		std::vector<Point> ps(es.size());
 		std::transform(es.begin(), es.end(), ps.begin(), [](const Element &e) {return e.p; });

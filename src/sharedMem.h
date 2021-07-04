@@ -9,6 +9,8 @@ using ShmemAllocator = boost::interprocess::allocator<T, managed_shared_memory::
 
 template <class VT>
 class SharedMemBase {
+protected:
+	explicit SharedMemBase() {}
 public:
 	virtual ~SharedMemBase() {}
 	VT* data;
