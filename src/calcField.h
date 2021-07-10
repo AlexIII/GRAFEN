@@ -20,6 +20,7 @@ public:
 	static bool isCUDAavailable();
 	static int getGPUnum();
 	static void setDevice(const int id);
+	virtual ~cuSolver() {}
 };
 
 class gFieldInvSolver : public cuSolver {

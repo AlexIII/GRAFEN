@@ -1,1 +1,2 @@
-include rocm.makefile
+include Makefile.rocm
+# include makefile.cuda

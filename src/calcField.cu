@@ -98,7 +98,7 @@ void cuSolver::setDevice(const int id) {
 
 class TransSolver : public gFieldInvSolver {
 public:
-	constexpr static const int parts = 4;
+	constexpr static const int parts = 1;
 
 	TransSolver(const std::vector<FieldPoint> &fps, const double dotPotentialRad) : dotPotentialRad(dotPotentialRad) {
 		for (int d = 0; d < parts; ++d) {
@@ -149,9 +149,9 @@ public:
 			thrust::host_vector<double> rsHost(rs);
 
 			//reduce result back
-			resMt.lock();
+			if(parts > 1) resMt.lock();
 			std::transform(resBegin, resBegin + taskSz, rsHost.cbegin(), resBegin, std::plus<double>());
-			resMt.unlock();
+			if(parts > 1) resMt.unlock();
 		}
 	}
 private:

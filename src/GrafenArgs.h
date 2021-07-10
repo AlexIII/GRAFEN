@@ -63,7 +63,6 @@ public:
 		// [-Req] *number*
 		// With topography:
 		// -topoHeightGrd7 *string*
-		// -topoDensGrd7 *string*			*** same mesh as topoHeightGrd7 (output for transposed solver)
 		// -fieldOnTopo						*** calc field on topography
 
 	GrafenArgs(int argc, char *argv[], const bool dbgMsg = false) {
@@ -71,6 +70,7 @@ public:
 
 		noInvFileOrder = ip.exists("noInvFileOrder");
 		trasSolver = ip.exists("transposeSolver");
+		withTopo = ip.exists("topoHeightGrd7");
 
 		//Hlim
 		ip["Hfrom"] >> Hlim.lower;
@@ -93,6 +93,15 @@ public:
 			ip["Nfrom"] >> Nlim.lower;
 			ip["Nto"] >> Nlim.upper;
 			ip["Nn"] >> Nlim.n;
+		}
+
+		if(withTopo) {
+			if(dbgMsg) cout << "Topo mode selected. Upper layer (the last *.grd file) is treated as topography layer." << endl;
+			Hlim.n -= 1;
+			topoDens = dens.back();
+			dens.pop_back();
+			topoDensFname = fnames.back();
+			fnames.pop_back();
 		}
 
 		ip["l0"] >> l0;
@@ -162,8 +171,7 @@ public:
 			if(dbgMsg) cout << "Using default reference ellipsoid with Rpol=" << refEllipsoid.Rpl << " and Req=" << refEllipsoid.Req << endl;
 		}
 
-		if(ip.exists("topoHeightGrd7") || ip.exists("topoDensGrd7") || ip.exists("fieldOnTopo")) {
-			withTopo = true;
+		if(withTopo) {
 			std::string fname;
 			ip["topoHeightGrd7"] >> fname;
 			Grid g(fname);
@@ -174,14 +182,6 @@ public:
 			if(ip.exists("fieldOnTopo")) {
 				dat.set(GDconv::toDat(g));	
 			}
-
-			ip["topoDensGrd7"] >> topoDensFname;
-			g.Read(topoDensFname);
-			checkGridSize(g);
-			g.setBlanksTo(g.mean());
-			topoDens = g.data;
-			if(topoHeights.size() != topoDens.size())
-				throw std::runtime_error("'topoHeightGrd7' and 'topoDensGrd7' sizes should match");
 		} 
 
 		if(ip.exists("toRel")) {
@@ -201,10 +201,14 @@ public:
 
 private:
 	void checkGridSize(Grid &g) {
-	if(Elim != limits{g.xLL, g.xLL + (g.nCol-1)*g.xSize, g.nCol})
-		throw std::runtime_error("'" + g.fname + "' and 'dens' Elim does not match");
-	if(Nlim != limits{g.yLL, g.yLL + (g.nRow-1)*g.ySize, g.nRow})
-		throw std::runtime_error("'" + g.fname + "' and 'dens' Nlim does not match");
+		const limits gElim{g.xLL, g.xLL + (g.nCol-1)*g.xSize, g.nCol};
+		if(Elim != gElim) {
+			throw std::runtime_error("'" + g.fname + "' and 'dens' Elim does not match");
+		}
+		const limits gNlim{g.yLL, g.yLL + (g.nRow-1)*g.ySize, g.nRow};
+		if(Nlim != gNlim) {
+			throw std::runtime_error("'" + g.fname + "' and 'dens' Nlim does not match");
+		}
 	}
 
 	void LoadDens(const std::string dirName, const bool dbgMsg) {
