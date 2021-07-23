@@ -1,2 +1,2 @@
-include Makefile.rocm
-# include makefile.cuda
+ARCH ?= rocm
+include Makefile.$(ARCH)
