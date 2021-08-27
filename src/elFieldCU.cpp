@@ -216,7 +216,7 @@ void cubeGen(const Volume &v, const Point J, vector<HexahedronWid, VAlloc> &hsi)
 
 template <class VAlloc>
 void ellipsoidGen(const Ellipsoid &e, const int nl, const int nB, const int nR, const Point J, vector<HexahedronWid, VAlloc> &hsi) {
-	limits ll{0, M_PI_2, nl}, lB{0, M_PI_2, nB}, lReq{0, e.Req, nR}, lRpl{0, e.Req, nR};
+	limits ll{0, M_PI_2, nl}, lB{0, M_PI_2, nB}, lReq{0, e.Req, nR}, lRpl{0, e.Rpl, nR};
 	// hsi.resize(ll.n * lB.n * lReq.n);
 	hsi.resize(0);
 	const int riStart = 0;
@@ -405,6 +405,29 @@ double field_sphere_H_in_Hz(const double R, const double Hprim_z, const double K
 	return K / (K+3) * Hprim_z * R*R*R * (2*p0.z*p0.z - p0.x*p0.x - p0.y*p0.y)/dr;
 }
 
+Point magnetization_J_theor_ellipsoid(const Ellipsoid &e, const Point J0, const double K) {
+	if(e.Rpl == e.Req) {	// Sphere
+		return J0 / (1. + K/3.);
+	}
+
+	Assert(e.Rpl > e.Req);
+
+	const double m = e.Rpl / e.Req;
+	// cout << m << endl;
+	const double lnPt = log((m + sqrt(m*m - 1))/(m - sqrt(m*m - 1)));
+	// cout << lnPt << endl;
+	const double L = (1. / (m*m - 1.)) * (
+		(m / (2. * sqrt(m*m - 1))) * lnPt - 1 
+	);
+	// cout << L << endl;
+	const double M = (m / (2. * (m*m - 1.))) * (
+		m - (1. / (2. * sqrt(m*m - 1))) * lnPt 
+	);
+	// cout << M << endl;
+	const Point I = J0 / (Point(1.) + Point(K).cmul({M, M, L}));
+	return I;
+}
+
 class WellDemagCluster : public MPIwrapper {
 public:
 	const int maxGPUmemMB = 5000;
@@ -424,13 +447,13 @@ public:
 
 	void runEllipsoid(int argc, char *argv[]) {
 		InputParser inp(argc, argv);
-		const Ellipsoid e(10, 10);
+		const Ellipsoid e(10, 20);
 
-		int nl = 20, nB = 20, nR = 20;
+		int nl = 80, nB = 80, nR = 40;
 
-		const double K = 0.2;
-		// const Point Hprime = { 14, 14, 35 }; //~40A/m
-		const Point Hprime = { 0, 0, 50 };
+		const double K = 2;
+		const Point Hprime = { 14, 14, 35 }; //~40A/m
+		// const Point Hprime = { 0, 0, 50 };
 		const auto I0 = Hprime * K;
 
 		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
@@ -453,7 +476,7 @@ public:
 
 		Stopwatch tmr;
 		tmr.start();
-		vector<HexahedronWid> hsi = demagSimpleIter<HexahedronWid>(ellipsoidModelGenerator, createCudaSolver);
+		vector<HexahedronWid> hsi = demagCG<HexahedronWid>(ellipsoidModelGenerator, createCudaSolver);
 		if(!isRoot()) return;
 		cout << "Total time: " << tmr.stop() << "sec." << endl;
 
@@ -512,8 +535,8 @@ public:
 
 		const double fieldElipHeight = 1;
 
-		const auto Ipres = I0 / (1. + K/3.);
-		cout << "Sphere presice I = " << Ipres << " | rel_err = " << (Ipres-mean).eqNorm()/Ipres.eqNorm()   << " | demag_rel_err = " << (Ipres-I0).eqNorm()/Ipres.eqNorm() << endl;
+		const auto Ipres = magnetization_J_theor_ellipsoid(e, I0, K);
+		cout << "Ellipsoid presice I = " << Ipres << " | rel_err = " << (Ipres-mean).eqNorm()/Ipres.eqNorm()   << " | demag_rel_err = " << (Ipres-I0).eqNorm()/Ipres.eqNorm() << endl;
 		cout << "Jmean= " << mean << " | pres_err= " << (Ipres-mean)/Ipres << " | rms_err= " << rms << endl << endl;
 
 		for(int layer = 0; layer < layersN; ++layer) {
@@ -721,7 +744,7 @@ private:
 	};
 
 	template<class ClosedShape>
-	vector<ClosedShape> demagSimpleIter(
+	vector<ClosedShape> demagCG(
 		const std::function<void(vector<ClosedShape>&, vector<double>&, vector<Point>&)> &modelGenerator,
 		const std::function<std::unique_ptr<gFieldSolver>(const vector<ClosedShape>&, const bool)> createCudaSolver
 	) {
@@ -891,7 +914,7 @@ private:
 			;
 		};
 
-		vector<ClosedShape> hsi = demagSimpleIter<ClosedShape>(modelGenerator, createCudaSolver);
+		vector<ClosedShape> hsi = demagCG<ClosedShape>(modelGenerator, createCudaSolver);
 		if(!isRoot()) return;
 
 		const auto &fOnDat = [&](Dat3D<Point> &res) {

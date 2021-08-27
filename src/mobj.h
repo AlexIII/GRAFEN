@@ -176,6 +176,9 @@ public:
 	CUDA_HOST_DEV_FUN bool operator!=(const Point3D &p) const {
 		return !(*this == p);
 	}
+	CUDA_HOST_DEV_FUN Point3D cmul(const Point3D& p) const {	//component-wise mul
+		return Point3D{ x*p.x, y*p.y, z*p.z };
+	}
 };
 
 template<typename T>
