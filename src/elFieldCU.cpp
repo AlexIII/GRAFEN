@@ -101,11 +101,10 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const do
 
 	const Point Joutter = Hprime*Koutter;
 	//const Point J0inner = Hprime*Kinner;
-
 	//make flat mesh
-	vector<Point> mesh((v.x.n+1) * (v.y.n+1));
 	const limits xLim = { v.x.lower - v.x.dWh() / 2.,  v.x.upper + v.x.dWh() / 2., v.x.n };
 	const limits yLim = { v.y.lower - v.y.dWh() / 2.,  v.y.upper + v.y.dWh() / 2., v.y.n };
+	vector<Point> mesh((v.x.n+1) * (v.y.n+1));
 	for (int yi = 0; yi < yLim.n + 1; ++yi)
 		for (int xi = 0; xi < xLim.n + 1; ++xi)
 			mesh[yi*(xLim.n+1) + xi] = Point(xLim.at(xi), yLim.at(yi), 0.);
@@ -164,7 +163,7 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const do
 	};
 	
 	//add 4 external quadrangles
-	const double l = 1e8;
+	const double l = 1e3;
 	hsi.push_back(makeOuterHex({ xLim.lower, - l, v.z.upper}, { l, yLim.lower, v.z.lower }));
 	hsi.push_back(makeOuterHex({ xLim.upper, yLim.lower, v.z.upper }, { l, l, v.z.lower }));
 	hsi.push_back(makeOuterHex({- l, yLim.upper, v.z.upper }, { xLim.upper, l, v.z.lower }));
@@ -587,6 +586,56 @@ public:
 		}
 	}
 
+	void runWell(int argc, char *argv[]) {
+		InputParser inp(argc, argv);
+
+		//well Model
+		const auto wellModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0){
+			Volume v{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
+			inp.parseIfExists("xlower", v.x.lower);
+			inp.parseIfExists("xupper", v.x.upper);
+			inp.parseIfExists("xn", v.x.n);
+			inp.parseIfExists("ylower", v.y.lower);
+			inp.parseIfExists("yupper", v.y.upper);
+			inp.parseIfExists("yn", v.y.n);
+			inp.parseIfExists("zlower", v.z.lower);
+			inp.parseIfExists("zupper", v.z.upper);
+			inp.parseIfExists("zn", v.z.n);
+
+			Cylinder well = { { { 4, 4 }, 0.25 }, 100 }; //x_cener, y_center, r, h
+			inp.parseIfExists("cxwell", well.center.x);
+			inp.parseIfExists("cywell", well.center.y);
+			inp.parseIfExists("rwell", well.r);
+			inp.parseIfExists("hwell", well.h);
+			double Kouter = 0.2;
+			double KinnerArg = 0;
+			inp.parseIfExists("Kouter", Kouter);
+			inp.parseIfExists("Kinner", KinnerArg);
+			const vector<double> Kinner(v.z.n, KinnerArg);
+			Point Hprime = { 14, 14, 35 }; //~40A/m
+			inp.parseIfExists("HprimeX", Hprime.x);
+			inp.parseIfExists("HprimeY", Hprime.y);
+			inp.parseIfExists("HprimeZ", Hprime.z);
+			
+			wellGen(v, well, Hprime, Kouter, Kinner, hsi, Kmodel);
+			I0.resize(hsi.size());
+			std::transform(hsi.cbegin(), hsi.cend(), I0.begin(), [](const HexahedronWid &h) {return h.dens;});
+		};
+
+		
+		double fieldH = 0.25;
+		inp.parseIfExists("fieldH", fieldH);
+		limits fieldDimX = { 2.5, 5.5, 150 };
+		limits fieldDimY = { 3, 5.5, 125 };
+		inp.parseIfExists("fieldXfrom", fieldDimX.lower);
+		inp.parseIfExists("fieldXto", fieldDimX.upper);
+		inp.parseIfExists("fieldXn", fieldDimX.n);
+		inp.parseIfExists("fieldYfrom", fieldDimY.lower);
+		inp.parseIfExists("fieldYto", fieldDimY.upper);
+		inp.parseIfExists("fieldYn", fieldDimY.n);
+		calcDemag<HexahedronWid>(wellModelGenerator, fieldDimX, fieldDimY, fieldH, "well", -1);
+	}
+
 private:
 	template<typename T>
 	struct CG {
@@ -795,9 +844,9 @@ private:
 	template<class ClosedShape>
 	void calcDemag(
 		const std::function<void(vector<ClosedShape>&, vector<double>&, vector<Point>&)> &modelGenerator,
-		const Volume& v,
+		// const Volume& v,
 		const limits& fieldDimX, const limits& fieldDimY, const double H,
-		const string& filePrefix,
+		string filePrefix,
 		const double DPR
 	) {
 		const auto createCudaSolver = [&DPR](const vector<ClosedShape>& hsi, const bool transpose) {
@@ -808,19 +857,15 @@ private:
 		};
 
 		vector<ClosedShape> hsi = demagCG<ClosedShape>(modelGenerator, createCudaSolver);
+		// No demag solving
+		// vector<ClosedShape> hsi;
+		// vector<double> K;
+		// vector<Point> I0;
+		// modelGenerator(hsi, K, I0);
+		// filePrefix += "_no_demag";
+
 		if(!isRoot()) return;
 
-		const auto &fOnDat = [&](Dat3D<Point> &res) {
-			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi, false);
-			for (auto &i : res)
-				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
-		};
-/*
-		Dat3D<Point> dd("cubeFieldSZ_IN.dat");
-		fOnDat(dd);
-		dd.write("cubeFieldSZ_IN_DESC.dat");
-		return;
-*/
 /*
 		const auto &fInWell = [&v, &well, &fOnDat](const string fname) {
 			Dat3D<Point> dat;
@@ -857,66 +902,6 @@ private:
 		};
 
 
-		const auto expJ = [&hsi, &v](const string& fname, const int layerIdx = 0) {	//dump J (magnetization)
-			Field x{ v.x, v.y }, y{ x }, z{ x };
-			for (int i = 0; i < v.y.n; ++i) {
-				for (int j = 0; j < v.x.n; ++j) {
-					const auto& h = hsi[layerIdx * (v.y.n*v.x.n) + i * v.x.n + j];
-					const Point p0 = h.massCenter();
-					x.data[i*x.x.n + j] = h.dens.x;
-					y.data[i*x.x.n + j] = h.dens.y;
-					z.data[i*x.x.n + j] = h.dens.z;
-				}
-			}
-			x.toGrid().Write(fname + "_x.grd");
-			y.toGrid().Write(fname + "_y.grd");
-			z.toGrid().Write(fname + "_z.grd");
-			//cout << "expJ() done." << endl;
-		};
-		const auto expJall = [&expJ, &v](const string& fname) {
-			for(int zi = 0; zi < v.z.n; ++zi)
-				expJ(fname + "_" + std::to_string(zi), zi);	
-		};
-
-
-
-		const auto expJdiff = [&expJall, &v](const string& filePrefix) {
-			expJall("Jn/" + filePrefix + "Jn");
-
-			const auto gridDiff3d = [](const string& base1, const string& base2, const string& baseDest) {
-				const auto diff1d = [&](const string& axis) {
-					Grid t(base1 + "_" + axis + ".grd");
-					auto gdiff = t - Grid(base2 + "_" + axis + ".grd");
-					gdiff.Write(baseDest + "_" + axis + ".grd");
-					return std::make_tuple(gdiff.mean(), gdiff.sumOfCubes(), t.sumOfCubes());
-				};
-				const auto x = diff1d("x"), y = diff1d("y"), z = diff1d("z");
-				return std::make_tuple( 
-					Point{ std::get<0>(x), std::get<0>(y), std::get<0>(z) }, //mean
-					std::get<1>(x) + std::get<1>(y) + std::get<1>(z), // sum of cubes for diff
-					std::get<2>(x) + std::get<2>(y) + std::get<2>(z) // sum of cubes for total
-				);
-			};
-
-			Point mean;
-			double sumOfCubesDiff = 0;
-			double sumOfCubesTotal = 0;
-			for(int zi = 0; zi < v.z.n; ++zi) {
-				const auto gr = gridDiff3d(
-					"Jn/" + filePrefix + "Jn" + "_" + std::to_string(zi), 
-					"J0/" + filePrefix + "J0" + "_" + std::to_string(zi), 
-					"Jn_J0_diff/" + filePrefix + "Jn_J0_diff" + "_" + std::to_string(zi)
-				);
-				mean += std::get<0>(gr);
-				sumOfCubesDiff += std::get<1>(gr);
-				sumOfCubesTotal += std::get<2>(gr);
-			}
-			return std::make_tuple( mean, sumOfCubesDiff, sumOfCubesTotal );
-		};
-
-		const auto JdiffRes = expJdiff(filePrefix);
-		cout << "Mean Jn-J0 = " << std::get<0>(JdiffRes) << endl;
-		cout << "|Jn-J0|/|Jn| = " << std::sqrt(std::get<1>(JdiffRes)) / std::sqrt(std::get<2>(JdiffRes)) << endl;
 		fOn(filePrefix + "Field");
 		//fInWell("inWell.dat");
 
@@ -928,7 +913,7 @@ private:
 int main(int argc, char *argv[]) {
 	bool isRoot = true;
 	try {
-		WellDemagCluster().runExample(argc, argv);
+		WellDemagCluster().runWell(argc, argv);
 		return 0;
 	}
 	catch (std::exception &ex) {

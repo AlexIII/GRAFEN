@@ -41,7 +41,29 @@ HprimeX, HprimeY, HprimeZ - external field in nanotesla
 Example:
 `-ellipEq 10 -ellipPol 20    -nl 40 -nB 40 -nR 20    -K 2    -HprimeX 14 -HprimeY 14 -HprimeZ 35`
 
-Careate `hosts.txt` file. You need to put here hosts that will execute the program. First host is 'root' host - it does not do actual computations. All other hosts perform computations using one GPU per host. You can utilize several GPUs on a single host by putting the same host entry several times in the file.
+### Well model (git tag well_example)
+
+xlower, xupper, xn, ylower, yupper, yn, zlower, zupper, zn - base cuboid bounds (with dense discretiztion grid) parameters
+
+cxwell, cywell - well center
+
+rwell - well radius
+
+hwell - well height
+
+Kouter - magnetic susceptibility outside of well
+
+Kinner - magnetic susceptibility inside of well
+
+HprimeX, HprimeY, HprimeZ - external field in nanotesla
+
+fieldH - output field plane height (along z axis, relative to z=0)
+
+fieldXfrom, fieldXto, fieldXn, fieldYfrom, fieldYto, fieldYn - output field parameters
+
+### MPI nodes
+
+Cerate `hosts.txt` file. You need to put here hosts that will execute the program. First host is 'root' host - it does not do actual computations. All other hosts perform computations using one GPU per host. You can utilize several GPUs on a single host by putting the same host entry several times in the file.
 For example, if you have 2 GPUs on host 192.168.5.1 and 4 GPUs on host 192.168.5.2. Your `host.txt` should be as follows:
 ```
 192.168.5.1
