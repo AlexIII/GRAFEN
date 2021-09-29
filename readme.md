@@ -51,15 +51,25 @@ rwell - well radius
 
 hwell - well height
 
-Kouter - magnetic susceptibility outside of well
+Kouter - magnetic susceptibility outside of the well
 
-Kinner - magnetic susceptibility inside of well
+Kinner - magnetic susceptibility inside of the well
 
 HprimeX, HprimeY, HprimeZ - external field in nanotesla
 
 fieldH - output field plane height (along z axis, relative to z=0)
 
 fieldXfrom, fieldXto, fieldXn, fieldYfrom, fieldYto, fieldYn - output field parameters
+
+### Cuboid example (git tag cuboid_example)
+
+Lx, Ly, Lz - length of the cuboid along x, y, z in meters
+
+Nper1 - number of partitioning elements per meter
+
+K - magnetic susceptibility of the cuboid
+
+HprimeX, HprimeY, HprimeZ - external field in nanotesla
 
 ### MPI nodes
 

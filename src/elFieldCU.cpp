@@ -424,6 +424,16 @@ public:
 		const Point Hprime = { HprimeX, HprimeY, HprimeZ };
 		const auto I0 = Hprime * K;
 
+		// Cuboid
+		double Lx = 1, Ly = 0.4, Lz = 0.4;
+		inp.parseIfExists("Lx", Lx);
+		inp.parseIfExists("Ly", Ly);
+		inp.parseIfExists("Lz", Lz);
+		int Nper1 = 100;
+		inp.parseIfExists("Nper1", Nper1);
+		const int Nx = Lx*Nper1, Ny = Ly*Nper1, Nz = Lz*Nper1;
+
+
 		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
 			// const auto Ipres = I0 / (1. + K/3.);	// Use known precise I
 			// ellipsoidGen(e, nl, nB, nR, Ipres, hsi);
@@ -432,7 +442,7 @@ public:
 			I0out.assign(hsi.size(), I0);
 		};
 		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out) {
-			cubeGen(Volume{{-10, 10, nl},{-5, 5, nB}, {-5, 5, nR}}, I0, hsi);
+			cubeGen(Volume{{-Lx/2., Lx/2., Nx}, {-Ly/2., Ly/2., Ny}, {-Lz/2., Lz/2., Nz}}, I0, hsi);
 			Kmodel.assign(hsi.size(), K);
 			I0out.assign(hsi.size(), I0);
 		};
@@ -444,7 +454,7 @@ public:
 
 		Stopwatch tmr;
 		tmr.start();
-		vector<HexahedronWid> hsi = demagCG<HexahedronWid>(ellipsoidModelGenerator, createCudaSolver);
+		vector<HexahedronWid> hsi = demagCG<HexahedronWid>(cubeModelGenerator, createCudaSolver);
 		if(!isRoot()) return;
 		cout << "Total time: " << tmr.stop() << "sec." << endl;
 
@@ -507,9 +517,9 @@ public:
 		cout << "Ellipsoid presice I = " << Ipres << " | rel_err = " << (Ipres-mean).eqNorm()/Ipres.eqNorm()   << " | demag_rel_err = " << (Ipres-I0).eqNorm()/Ipres.eqNorm() << endl;
 		cout << "Jmean= " << mean << " | pres_err= " << (Ipres-mean)/Ipres << " | rms_err= " << rms << endl << endl;
 
-		for(int layer = 0; layer < layersN; ++layer) {
-			cout << layer << ": "  << "Jmean= " << meanStatLayers[layer].get() << " | rms_err= " << rmsStatLayers[layer].get() << endl;
-		}
+		// for(int layer = 0; layer < layersN; ++layer) {
+		// 	cout << layer << ": "  << "Jmean= " << meanStatLayers[layer].get() << " | rms_err= " << rmsStatLayers[layer].get() << endl;
+		// }
 
 		const Point p0{0, 0, e.Req + fieldElipHeight};
 		// cout << "Sphere presice Hsnd_z = " << field_sphere_H_in_Hz(e.Req, Hprime.z, K, p0) << endl;
@@ -539,12 +549,14 @@ public:
 
 		// {
 		// 	Dat3D<Point> dd;
-		// 	const double t = 0.001;
-		// 	for (double x = -15-t; x < 15; x += 0.2)
-		// 		for (double y = -15-t; y < 15; y += 0.2)
-		// 			dd.es.push_back({{ x, y, e.Req/2 + t}});
+		// 	const double t = 0.00001;
+		// 	const double step = 0.02;
+		// 	const double H = 0.5;
+		// 	for (double x = -1.5-t; x < 1.5; x += step)
+		// 		for (double y = -1.5-t; y < 1.5; y += step)
+		// 			dd.es.push_back({{ x, y, H}});
 		// 	fOnDat(dd);
-		// 	dd.write("elip_f_in_out_no_J3.dat");
+		// 	dd.write("cube_f.dat");
 		// 	return;
 		// }
 
@@ -575,14 +587,14 @@ public:
 		// 			}
 		// 	dd.write("elip_J_in.dat");
 		// }
-		
+
 		{
 			Dat3D<Point> dd;
 			for(int i = 0; i < hsi.size(); ++i) {
 				const auto c = hsi[i].massCenter();
-				dd.es.push_back({{c.x, c.y, c.z}, hsi[i].dens});
+				dd.es.push_back({{c.x, c.y, c.z}, hsi[i].dens - I0});
 			}
-			dd.write("ball_J_all_in.dat");
+			dd.write("cube_Jsnd_all_in.dat");
 		}
 	}
 
