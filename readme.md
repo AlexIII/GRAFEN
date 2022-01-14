@@ -9,25 +9,40 @@ For the build instructions please refer to the `master` branch `readme.md`.
 
 
 ## Program arguments
-Specify file for the output field:
 
-`-gravGrd7 grdField.grd`			- Surfer grd7 file. Grid dimensions are used as file input. All coordinates in Gauss-Kruger projection (km). Old grid values are ignored and will be rewritten.
+Specify data files
+
+`-grd7 grdField.grd`		- Gravity field field input-output. Surfer grd7 file. Grid dimensions are used as file input. All coordinates in Gauss-Kruger projection (km). Old grid values are ignored and will be rewritten.
+
+`-dens dens_model`			- Directory with layered density model (set of grd7 files). The top layer treated as density distribution in the topography layer.
+
+`-topoHeightGrd7 topo.grd`  - Surfer grd7 file. Height map (upper boundry of the model) in km. Grid dimensions are in Gauss-Kruger projection (km).
 
 Specify input parameters:
-`-topoGrd7 grdTopo.grd`			- Surfer grd7 file. Height map (upper boundry of the model). Grid dimensions are in Gauss-Kruger projection (km).
 
-`-dens VAL`			- Model constant density in g/cm^3. A number.
+`-fieldOnTopo`				- (optional) Calculate field on the topography heights.
 
-`-Req VAL`			- (optional) Equatorial radius, km. (6378.245km if not specified)
-`-Rpol VAL`			- (optional) Polar radius, km. (6356.863km if not specified)
+`-Hf 0.00001`				- Height over the Ellipsoid on which the field is being calculated (km). This parameter is ignored if `-dat3D` was specified. It is not recommended to pass exactly 0.
 
-`-DPR 180` 			-(optional) Radius of point-field replacement (in km). If you don't specify this option, replacement radius will be automatically deduced, based on condition that the output field accuracy won't be reduced more than by 0.1%. Set to '-1' to disable (default).
+`-Hfrom -81` 				- Depth of the lower grid layer (density model)
 
-`-nx`			      - (optional) Calculate gravity field along x normal.
-`-ny`			      - (optional) Calculate gravity field along y normal.
-`-nz`			      - (optional) Calculate gravity field along z normal.
+`-Hto 0` 					- Depth of the upper grid layer (density model)
 
-`-flat` 				- Calculate gravity field for 'flat' model.
+`-Hn 81` 					- Number of layers of the density model (must be same as amount of files in dens_model)
+
+`-l0 57` 					- Central meridian for Gauss-Kruger projection
+
+`-DPR 180` 				    - (optional) Radius of point-field replacement (in km). If you don't specify this option, replacement radius will be automatically deduced, based on condition that the output field accuracy won't be reduced more than by 0.1%.
+
+`-toRel`					- (optional) Convert input density model to relative values
+
+`-noInvFileOrder`			- (optional) Don't invert the file order of density model
+
+`-transposeSolver`		    - (optional) Solve gravity problem with transposed forward gravity field operator. Files in dens_model will be rewritten, "output field" is now treated as input.
+
+`-Req VAL`			        - (optional) Equatorial radius, km. (6378.245km if not specified)
+
+`-Rpol VAL`			        - (optional) Polar radius, km. (6356.863km if not specified)
 
 
 ## License
