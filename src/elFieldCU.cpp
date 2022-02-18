@@ -433,7 +433,6 @@ public:
 		inp.parseIfExists("Nper1", Nper1);
 		const int Nx = Lx*Nper1, Ny = Ly*Nper1, Nz = Lz*Nper1;
 
-
 		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
 			// const auto Ipres = I0 / (1. + K/3.);	// Use known precise I
 			// ellipsoidGen(e, nl, nB, nR, Ipres, hsi);
@@ -748,6 +747,48 @@ private:
 			return {};
 		};
 
+		//re-calculate J (magnetization) in every ClosedShape (simple iteration Mod)
+		const auto &fJnMod = [&createCudaSolver, &hsi, &K, &J0, this]() -> vector<Point> {
+			Bcast(hsi);
+			std::unique_ptr<gFieldSolver> solver = createCudaSolver(hsi, false);
+			vector<Point> fieldPoints(hsi.size());
+			std::transform(hsi.cbegin(), hsi.cend(), fieldPoints.begin(), [](const ClosedShape &h) {return h.massCenter();});
+			vector<Point> field(hsi.size());
+			MPIpool<Point, Point> pool(*this, fieldPoints, field, 1024);
+			// pool.logging = true;
+			int cnt = 0;
+			if (!isRoot()) {
+				while (1) {
+					const vector<Point> task = pool.getTask();
+					if (!task.size()) break;
+					if(pool.logging) cout << "Task accepted " << cnt++ << " size: " << task.size() << endl;
+					vector<Point> result(task.size());
+					for (int i = 0; i < task.size(); ++i)
+						result[i] = -solver->solve(task[i]);
+					pool.submit(result);
+				}
+			} else {
+				cout << "result gather ok" << endl;
+
+				for (int i = 0; i < field.size(); ++i) 
+					field[i] = ( 
+							(field[i] / (4.*M_PI)) * 2. * K[i] + 
+							J0[i] * 2. 
+							+ hsi[i].dens * K[i]
+						) / ( 2. + K[i] ) ;
+
+				Point mean = 0;
+				for (int i = 0; i < field.size(); ++i) 
+					mean += field[i];
+				mean = mean / field.size();
+				cout << "Mean Jn+1= " << mean << endl;
+
+				return field;
+			}
+
+			return {};
+		};
+
 		// Re-calculate J (magnetization) in every ClosedShape (CG)
 		// Should be valid: 'hsi' - all nodes; x - root; result - root
 		const auto OpCGt = [&createCudaSolver, &hsi, &K, &J0, this](vector<Point> x = {}, const bool transpose = false) -> vector<Point> {
@@ -804,16 +845,16 @@ private:
 				bool cont = false;
 				Bcast(cont);
 				if (!cont) break;
-				//fJn();
+				// fJnMod();
 				OpCGt();
 			}
 			cout << "Done." << endl;
 			return {};
 		}
 		
-		const double eps = 1e-4;
+		const double eps = 1e-3;
 		const double minRelativeErrChange = 0.05; //5%
-		const int maxIter = 10;
+		const int maxIter = 100;
 		double err = 1, prvErr = err*100;
 
 		cout << "CG: preparing first iter" << endl;
@@ -828,11 +869,12 @@ private:
 			bool cont = true;
 			Bcast(cont);
 
-			// const vector<Point> In = fJn();
+			// const vector<Point> In = fJnMod();
 			// cout << endl;
 			cg.nextIter();
 			
 			prvErr = err;
+
 			// err = residualEqAndCopy(In, hsi) / [&In]() {
 			// 	double sum = 0;
 			// 	for (auto& i: In)
