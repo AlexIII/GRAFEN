@@ -93,6 +93,30 @@ struct QuadrangleRef {
 	}
 };
 
+std::array<Hexahedron, 4> extendCuboidBoundedModelWith4cuboids(const Volume &innerModelBounds, const double extensionLength, const Point &Joutter) {
+	std::array<Hexahedron, 4> hsi;
+
+	auto makeOuterHex = [&Joutter](const Point& llt, const Point& rub) { //left low top, right upper bottom
+		return Hexahedron{ {
+			{rub.x, rub.y, llt.z},
+			{ rub.x, llt.y, llt.z },
+			{ llt.x, rub.y, llt.z },
+			llt,
+			rub,
+			{ rub.x, llt.y, rub.z },
+			{ llt.x, rub.y, rub.z },
+			{llt.x, llt.y, rub.z}
+			}, Joutter };
+	};
+	
+	hsi[0] = makeOuterHex({ innerModelBounds.x.lower, -extensionLength, innerModelBounds.z.upper}, { extensionLength, innerModelBounds.y.lower, innerModelBounds.z.lower });
+	hsi[1] = makeOuterHex({ innerModelBounds.x.upper, innerModelBounds.y.lower, innerModelBounds.z.upper }, { extensionLength, extensionLength, innerModelBounds.z.lower });
+	hsi[2] = makeOuterHex({ -extensionLength, innerModelBounds.y.upper, innerModelBounds.z.upper }, { innerModelBounds.x.upper, extensionLength, innerModelBounds.z.lower });
+	hsi[3] = makeOuterHex({ -extensionLength, -extensionLength, innerModelBounds.z.upper }, { innerModelBounds.x.lower, innerModelBounds.y.upper, innerModelBounds.z.lower });
+
+	return hsi;
+}
+
 template <class VAlloc>
 void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const double Koutter, const vector<double> Kinner,
 		vector<HexahedronWid, VAlloc> &hsi, vector<double> &K) {
@@ -149,25 +173,10 @@ void wellGen(const Volume &v, const Cylinder &well, const Point Hprime, const do
 				K[ind] = Kval;
 			}
 
-	auto makeOuterHex = [&Joutter](const Point& llt, const Point& rub) { //left low top, right upper bottom
-		return Hexahedron{ {
-			{rub.x, rub.y, llt.z},
-			{ rub.x, llt.y, llt.z },
-			{ llt.x, rub.y, llt.z },
-			llt,
-			rub,
-			{ rub.x, llt.y, rub.z },
-			{ llt.x, rub.y, rub.z },
-			{llt.x, llt.y, rub.z}
-			}, Joutter };
-	};
-	
 	//add 4 external quadrangles
-	const double l = 1e3;
-	hsi.push_back(makeOuterHex({ xLim.lower, - l, v.z.upper}, { l, yLim.lower, v.z.lower }));
-	hsi.push_back(makeOuterHex({ xLim.upper, yLim.lower, v.z.upper }, { l, l, v.z.lower }));
-	hsi.push_back(makeOuterHex({- l, yLim.upper, v.z.upper }, { xLim.upper, l, v.z.lower }));
-	hsi.push_back(makeOuterHex({- l, - l, v.z.upper }, { xLim.lower, yLim.upper, v.z.lower }));
+	const double extensionLength = 1e3;
+	const auto extension = extendCuboidBoundedModelWith4cuboids(Volume{ xLim, yLim, v.z }, extensionLength, Joutter);
+	hsi.insert(hsi.end(), extension.begin(), extension.end());
 	K.push_back(Koutter);
 	K.push_back(Koutter);
 	K.push_back(Koutter);
@@ -432,7 +441,7 @@ public:
 		int Nper1 = 100;
 		inp.parseIfExists("Nper1", Nper1);
 		const int Nx = Lx*Nper1, Ny = Ly*Nper1, Nz = Lz*Nper1;
-
+		
 		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
 			// const auto Ipres = I0 / (1. + K/3.);	// Use known precise I
 			// ellipsoidGen(e, nl, nB, nR, Ipres, hsi);
@@ -445,6 +454,36 @@ public:
 			Kmodel.assign(hsi.size(), K);
 			I0out.assign(hsi.size(), I0);
 		};
+		const auto layersModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out) {
+			const vector<double> KtopToBottom = { 2, 1, 0.5 };
+			const vector<double> layerLowerPlaneTopToBottom = { -1, -2, -3 };
+			Assert(KtopToBottom.size() == layerLowerPlaneTopToBottom.size());
+			const double extensionLength = 1e3;
+			const int Nlayers = KtopToBottom.size();
+			const int Nx = 100, Ny = 100, Nz = 5;
+
+			for(int i = 0; i < Nlayers; ++i) {
+				Volume vol{{-10, 10, Nx}, {-10, 10, Ny}, {layerLowerPlaneTopToBottom[i], i == 0? 0 : layerLowerPlaneTopToBottom[i-1], Nz}};
+				const auto I0 = Hprime * KtopToBottom[i];
+				vector<HexahedronWid> centerHex;
+				cubeGen(vol, I0, centerHex);
+				hsi.insert(hsi.begin(), centerHex.begin(), centerHex.end());
+				
+				// const auto extension = vector<Hexahedron>{};
+				const auto extension = extendCuboidBoundedModelWith4cuboids(vol, extensionLength, I0);
+				hsi.insert(hsi.end(), extension.begin(), extension.end());
+
+				vector<double> kTmp;
+				kTmp.assign(centerHex.size() + extension.size(), KtopToBottom[i]);
+				Kmodel.insert(Kmodel.end(), kTmp.begin(), kTmp.end());
+				vector<Point> I0Tmp;
+				I0Tmp.assign(centerHex.size() + extension.size(), I0);
+				I0out.insert(I0out.end(), I0Tmp.begin(), I0Tmp.end());
+			}
+
+			Assert(hsi.size() == Kmodel.size());
+			Assert(hsi.size() == I0out.size());
+		};
 		const auto createCudaSolver = [&](const vector<HexahedronWid>& hsi, const bool transpose) {
 			return gFieldSolver::getCUDAsolver(&*hsi.cbegin(), &*hsi.cend(), transpose);
 			// const double replDist = 3;
@@ -453,7 +492,7 @@ public:
 
 		Stopwatch tmr;
 		tmr.start();
-		vector<HexahedronWid> hsi = demagCG<HexahedronWid>(cubeModelGenerator, createCudaSolver);
+		vector<HexahedronWid> hsi = demagCG<HexahedronWid>(layersModelGenerator, createCudaSolver);
 		if(!isRoot()) return;
 		cout << "Total time: " << tmr.stop() << "sec." << endl;
 
@@ -546,18 +585,18 @@ public:
 				i.val = -solver->solve({ i.p.x, i.p.y, i.p.z }) / (4 * M_PI);
 		};
 
-		// {
-		// 	Dat3D<Point> dd;
-		// 	const double t = 0.00001;
-		// 	const double step = 0.02;
-		// 	const double H = 0.5;
-		// 	for (double x = -1.5-t; x < 1.5; x += step)
-		// 		for (double y = -1.5-t; y < 1.5; y += step)
-		// 			dd.es.push_back({{ x, y, H}});
-		// 	fOnDat(dd);
-		// 	dd.write("cube_f.dat");
-		// 	return;
-		// }
+		{
+			Dat3D<Point> dd;
+			const double size = 20.1;
+			const double step = 0.2;
+			const double H = 0.001;
+			for (double x = -size; x < size; x += step)
+				for (double y = -size; y < size; y += step)
+					dd.es.push_back({{ x, y, H }});
+			fOnDat(dd);
+			dd.write("layers_f.dat");
+			return;
+		}
 
 		// {
 		// 	Dat3D<Point> dd;
@@ -587,14 +626,14 @@ public:
 		// 	dd.write("elip_J_in.dat");
 		// }
 
-		{
-			Dat3D<Point> dd;
-			for(int i = 0; i < hsi.size(); ++i) {
-				const auto c = hsi[i].massCenter();
-				dd.es.push_back({{c.x, c.y, c.z}, hsi[i].dens - I0});
-			}
-			dd.write("cube_Jsnd_all_in.dat");
-		}
+		// {
+		// 	Dat3D<Point> dd;
+		// 	for(int i = 0; i < hsi.size(); ++i) {
+		// 		const auto c = hsi[i].massCenter();
+		// 		dd.es.push_back({{c.x, c.y, c.z}, hsi[i].dens - I0});
+		// 	}
+		// 	dd.write("cube_Jsnd_all_in.dat");
+		// }
 	}
 
 	void runWell(int argc, char *argv[]) {
