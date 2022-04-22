@@ -15,15 +15,6 @@ OBJS_HIP = calcField.hip.o
 
 #------------- Specify dependency paths ------------------
 
-#GeographicLib
-GEOLIB_PATH = ../deps/GeographicLib_installed
-GEOLIB_INCLUDE_PATH = $(GEOLIB_PATH)/include/
-GEOLIB_LIB_PATH = $(GEOLIB_PATH)/lib/
-
-#boost
-BOOST_PATH = ../deps/boost_1_73_0
-BOOST_INCLUDE_PATH = $(BOOST_PATH)
-
 #MPICH
 MPI_INCLUDE_PATH = /usr/lib/x86_64-linux-gnu/mpich/include/
 MPI_LIB_PATH = /usr/lib/x86_64-linux-gnu/
@@ -45,10 +36,10 @@ $(OBJS_HIP): %.o: %.cpp
 
 #comple CPU
 $(OBJS_CPU): %.o: %.cpp
-	$(CXX) -o $@ $< -c $(CXXFLAGS) $(GNU_CXXFLAGS) -I$(GEOLIB_INCLUDE_PATH) -I$(BOOST_INCLUDE_PATH) -I$(MPI_INCLUDE_PATH)
+	$(CXX) -o $@ $< -c $(CXXFLAGS) $(GNU_CXXFLAGS) -I$(MPI_INCLUDE_PATH)
 
 $(TARGET): $(OBJS_CPU) $(OBJS_HIP)
-	$(HIPCC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) -L$(GEOLIB_LIB_PATH) -lGeographic -lrt -L$(MPI_LIB_PATH) -lmpich
+	$(HIPCC) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) -lrt -L$(MPI_LIB_PATH) -lmpich
 
 clean:
 	rm -rf *.o $(TARGET) *.hip.*

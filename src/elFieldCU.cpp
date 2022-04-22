@@ -1,8 +1,4 @@
-﻿
-#define GEOGRAPHICLIB_SHARED_LIB 0
-#include <GeographicLib/TransverseMercator.hpp>
-
-#include <iostream>
+﻿#include <iostream>
 #include <cmath>
 #include <vector>
 #include <string>
@@ -15,18 +11,17 @@
 #include <numeric>
 #include "mobj.h"
 #include "calcField.h"
-#include "inputLoader.h"
+#include "Dat.h"
+#include "inputParser.h"
 #include "Stopwatch.h"
 #include "Quadrangles.h"
 #include "MPIwrapper.h"
 #include "MPIpool.h"
 
-#include "sharedMem.h"
-using gElementsShared = std::vector<HexahedronWid, ShmemAllocator<HexahedronWid>>;
-
 using std::string;
 using std::vector;
-using GeographicLib::TransverseMercator;
+using std::cout;
+using std::endl;
 
 #define Assert(exp) do { if (!(exp)) throw std::runtime_error("Assertion failed at: " + string(__FILE__) + " # line " + string(std::to_string(__LINE__))); } while (0)
 
@@ -397,11 +392,7 @@ Point magnetization_J_theor_ellipsoid(const Ellipsoid &e, const Point J0, const 
 
 class WellDemagCluster : public MPIwrapper {
 public:
-	const int maxGPUmemMB = 5000;
 	int triBufferSize = 0;
-	using Qiter = gElementsShared::const_iterator;
-
-	SharedMemBase<gElementsShared> *sharedMem = 0;
 
 	WellDemagCluster(const vector<int> &gpuIdMap = {}) : MPIwrapper() {
 		if (gridSize < 2) throw std::runtime_error("You must run at least 2 MPI processes.");
@@ -414,13 +405,24 @@ public:
 
 	void runExample(int argc, char *argv[]) {
 		InputParser inp(argc, argv);
-		const Ellipsoid e(10, 20);
 
+		double ellipEq = 10, ellipPol = 20;
 		int nl = 80, nB = 80, nR = 40;
+		double K = 2;
+		double HprimeX = 14, HprimeY = 14, HprimeZ = 35; //~40A/m
 
-		const double K = 2;
-		const Point Hprime = { 14, 14, 35 }; //~40A/m
-		// const Point Hprime = { 0, 0, 50 };
+		inp.parseIfExists("ellipEq", ellipEq);
+		inp.parseIfExists("ellipPol", ellipPol);
+		inp.parseIfExists("nl", nl);
+		inp.parseIfExists("nB", nB);
+		inp.parseIfExists("nR", nR);
+		inp.parseIfExists("K", K);
+		inp.parseIfExists("HprimeX", HprimeX);
+		inp.parseIfExists("HprimeY", HprimeY);
+		inp.parseIfExists("HprimeZ", HprimeZ);
+
+		const Ellipsoid e(ellipEq, ellipPol);
+		const Point Hprime = { HprimeX, HprimeY, HprimeZ };
 		const auto I0 = Hprime * K;
 
 		const auto ellipsoidModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0out){
@@ -582,82 +584,6 @@ public:
 				dd.es.push_back({{c.x, c.y, c.z}, hsi[i].dens});
 			}
 			dd.write("ball_J_all_in.dat");
-		}
-	}
-
-	void run(int argc, char *argv[]) {
-/*
-		if(isRoot()) {
-			hexTest();
-		}
-*/
-		InputParser inp(argc, argv);
-		
-		double H = 0.25;
-		if (inp.exists("H")) inp["H"] >> H;
-
-		//well Model
-		const auto wellModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &K){
-			Volume v{ { -2, 10, 120 },{ -2, 10, 120 },{ -8, 0, 40 } };
-			if(inp.exists("xn")) inp["xn"] >> v.x.n;
-			if(inp.exists("yn")) inp["yn"] >> v.y.n;
-			if(inp.exists("zn")) inp["zn"] >> v.z.n;
-
-			Cylinder well = { { { 4.1, 4.1 }, 0.25 }, 100 }; //x_cener, y_center, r, h
-			if(inp.exists("rwell")) inp["rwell"] >> well.r;
-			double Kouter = 0.02;
-			const double Kinner0 = 0;
-			const Point Hprime = { 14, 14, 35 }; //~40A/m
-
-			//read K inner
-			vector<double> Kinner(v.z.n, Kinner0);
-			if (inp.exists("kin")) {
-				string KinnerFname;
-				inp["kin"] >> KinnerFname;
-				Dat2D<> Kin(KinnerFname);
-				v.z = { -Kin.xMax(), 0, (int)Kin.size() };
-				Kinner.resize(v.z.n);
-				double meanK = 0;
-				for (int i = 0; i < Kin.size(); ++i)
-					meanK += Kinner[Kin.size() - i - 1] = Kin[i].p.y / 1e5;
-				meanK /= Kin.size();
-				Kouter = meanK;
-				cout << "Kouter: " << Kouter << endl;
-			}
-		};
-
-		//const limits fieldDim = { 0, 8.1, 60 };
-		//calcDemag(wellModelGenerator, fieldDim, fieldDim, H, "well");
-
-		// Volume cubeVolume{ { -20, 20, 160 },{ -20, 20, 160 },{ 0, -4, 16 } }; //cube "A"
-		// Volume cubeVolume{ { -2, 2, 50 },{ -1, 1, 25 },{ -2, 0, 25 } }; //cube "B" 2:1 - 4x2x2
-
-		const int ratio = 2; //x2
-		Volume cubeVolume{ { -2, 2, 25*ratio },{ -2./double(ratio), 2./double(ratio), 25 },{ -4./double(ratio), 0, 25 } }; //cube "B"
-
-		if(inp.exists("xn")) inp["xn"] >> cubeVolume.x.n;
-		if(inp.exists("yn")) inp["yn"] >> cubeVolume.y.n;
-		if(inp.exists("zn")) inp["zn"] >> cubeVolume.z.n;
-
-		const auto cubeModelGenerator = [&](vector<HexahedronWid> &hsi, vector<double> &Kmodel, vector<Point> &I0) {
-			const double K = 0.2;
-			//const Point Hprime = { 14, 14, 35 }; //~40A/m
-			const Point Hprime = { 0, 0, 50 }; //~40A/m
-
-			cubeGen(cubeVolume, Hprime*K, hsi);
-			Kmodel.assign(hsi.size(), K);
-			I0.assign(hsi.size(), Hprime*K);
-		};
-
-		double DPR = std::max({ cubeVolume.x.d(), cubeVolume.y.d(), cubeVolume.z.d() }) * 4;
-		if(inp.exists("DPR")) inp["DPR"] >> DPR;
-		if(isRoot()) cout << "DPR: " << DPR << (DPR < 0? " (disabled)" : "") << endl;
-		const limits fieldDim = { -25 + 0.00001, 25 + 0.00001, 40 };
-		Stopwatch tmr;
-		tmr.start();
-		calcDemag<HexahedronWid>(cubeModelGenerator, cubeVolume, fieldDim, fieldDim, H, "cube", DPR);
-		if(isRoot()) {
-			cout << "Total time: " << tmr.stop() << "sec." << endl;
 		}
 	}
 

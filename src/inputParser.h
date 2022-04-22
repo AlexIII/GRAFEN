@@ -57,6 +57,15 @@ public:
 		return tmp;
 	}
 
+	template<typename T>
+	bool parseIfExists(const std::string &key, T& val) {
+		if(exists(key)) {
+			(*this)[key] >> val;
+			return true;
+		}
+		return false;
+	}
+
 	const std::map<std::string, std::string>& getMap() {
 		return inp;
 	}

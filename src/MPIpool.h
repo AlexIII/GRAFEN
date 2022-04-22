@@ -1,6 +1,10 @@
 #pragma once
 #include <thread>
+#include <iostream>
 #include "MPIwrapper.h"
+
+using std::cout;
+using std::endl;
 
 template<typename TaskType, typename ResType>
 class MPIpool {
