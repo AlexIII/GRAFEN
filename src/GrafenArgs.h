@@ -117,8 +117,7 @@ public:
 			ip["xOffset"] >> xOffset;
 			GKopts.xOffset = xOffset;
 		} else {
-			const int zone = round(GKopts.l0 / toRad(6.)) + 1;
-			GKopts.xOffset = zone * 1000. + 500.;
+			GKopts.xOffset = 500.0 * (GKopts.l0 / 3.0 + 2.0);
 		}
 
 		if(ip.exists("densLayers")) {
