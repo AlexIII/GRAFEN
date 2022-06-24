@@ -17,7 +17,6 @@
 #include "mobj.h"
 #include "calcField.h"
 #include "GrafenArgs.h"
-#include "TopogravArgs.h"
 #include "Stopwatch.h"
 #include "Quadrangles.h"
 #include "MPIwrapper.h"
@@ -48,18 +47,6 @@ int getHexAm(const int nx, const int ny, const int nz) {
 	return nx*ny*nz;
 }
 
-//x (East direction) to Gaus-Kruger
-double xToGK(const double x, const double l0) {
-	const int zone = int(l0 / toRad(6.)) + 1;
-	return x + (zone*1e3 + 5e2);
-}
-
-//Gaus-Kruger to x (East direction)
-double xFromGK(const double x, const double l0) {
-	const int zone = int(l0 / toRad(6.)) + 1;
-	return x - (zone*1e3 + 5e2);
-}
-
 //estimate approximate buffer size for the Hexahedrons that can't be replaced by a singular source
 int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, const double r) {
 	auto f = [&](const limits &lim)->int {return (int)ceil(1.62*r*double(lim.n) / lim.width()); };
@@ -69,59 +56,25 @@ int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, co
 }
 
 //{B in deg, l in deg, z} -> {E, N, z} in km, l0 in Rad
-Point GeoToGK(const TransverseMercator &proj, const double l0, const double B, const double l, const double z) {
-	Point p{0, 0, z};
-	proj.Forward(toDeg(l0), B, l, p.x, p.y);
+Point GeoToGK(const TransverseMercator &proj, const GKoptions &opts, const double B, const double l, const double z) {
+	Point p{ 0, 0, z };
+	proj.Forward(toDeg(opts.l0), B, l, p.x, p.y);
 	p.x /= 1000.;
 	p.y /= 1000.;
-	p.x = xToGK(p.x, l0);
+	p.x += opts.xOffset;
 	return p;
 }
-/*
-//construct flat density model in GK from topography model (mesh nodes in degrees)
-//topo - mesh in deg, height in km
-//generates prisms
-template <class VAlloc>
-void makeHexsTopoFlat(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
-	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
-	hsi.resize(xN * yN);
-
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
-	auto GeoToGK3 = [&](const double B, const double l, const double z) -> Point { 
-		return GeoToGK(proj, l0, B, l, z);
-	};
-
-#pragma omp parallel for
-	for (int yi = 0; yi < yN; ++yi)
-		for (int xi = 0; xi < xN; ++xi) {
-			const Hexahedron h({
-				//above
-				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi + 1), topo.at(xi + 1, yi + 1)),	//top right
-				GeoToGK3(topo.yAt(yi), topo.xAt(xi + 1), topo.at(xi + 1, yi)), //bottom right
-				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi), topo.at(xi, yi + 1)), //top left
-				GeoToGK3(topo.yAt(yi), topo.xAt(xi), topo.at(xi, yi)), //bottom left
-				//below
-				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi + 1), 0),	//top right
-				GeoToGK3(topo.yAt(yi), topo.xAt(xi + 1), 0), //bottom right
-				GeoToGK3(topo.yAt(yi + 1), topo.xAt(xi), 0), //top left
-				GeoToGK3(topo.yAt(yi), topo.xAt(xi), 0), //bottom left
-			}, dens);
-
-			hsi[yi*xN + xi] = HexahedronWid(h);
-		}
-}
-*/
 
 //construct density model from topography model (mesh nodes in degrees)
 //topo - mesh in deg, height in km
 //generates cuboids
 template <class VAlloc>
-void makeHexsTopoFlatCuboids(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+void makeHexsTopoFlatCuboids(const GKoptions &opts, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	hsi.resize(topo.nCol * topo.nRow);
 
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
 	auto GeoToGK3 = [&](const double B, const double l, const double z) -> Point { 
-		return GeoToGK(proj, l0, B, l, z);
+		return GeoToGK(proj, opts, B, l, z);
 	};
 
 	const double hdx = topo.xSize / 2., hdy = topo.ySize / 2.;
@@ -182,19 +135,21 @@ void makeHexsTopoGeo(const Ellipsoid &e, const Grid &topo, const double dens, ve
 //construct spherical density model from topography model (mesh nodes in degrees)
 //topo - mesh in km (GK coord), height in km
 template <class VAlloc>
-void makeHexsTopoGK(const double l0, const Ellipsoid &e, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
+void makeHexsTopoGK(const GKoptions &GKopts, const Grid &topo, const double dens, vector<HexahedronWid, VAlloc> &hsi) {
 	const int xN = topo.nCol - 1, yN = topo.nRow - 1; //ln, Bn
 	hsi.resize(xN * yN);
 
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	const TransverseMercator proj(GKopts.e.Req * 1000., GKopts.e.f, 1);
 	auto GKtoGeo = [&](const double N, double E) -> std::pair<double, double> {
 		std::pair<double, double> lb;
-		E = xFromGK(E, l0);
-		proj.Reverse(toDeg(l0), E*1000., N*1000., lb.second, lb.first);
+		E -= GKopts.xOffset;
+		proj.Reverse(toDeg(GKopts.l0), E*1000., N*1000., lb.second, lb.first);
 		lb.first = toRad(lb.first);
 		lb.second = toRad(lb.second);
 		return lb;
 	};
+
+	const auto& e = GKopts.e;
 
 #pragma omp parallel for
 	for(int yi = 0; yi < yN; ++yi)
@@ -223,28 +178,29 @@ void makeHexsTopoGK(const double l0, const Ellipsoid &e, const Grid &topo, const
 }
 
 template <class VectorIterator>
-size_t makeHexsTopoFlatCuboidsGK(const double l0, const Ellipsoid &e, limits Nlim, limits Elim,
+size_t makeHexsTopoFlatCuboidsGK(const GKoptions &GKopts, limits Nlim, limits Elim,
 		const vector<double> &heights, const vector<double> &dens, 
 		VectorIterator hsiBegin, VectorIterator hsiEnd) {
 
 	Nlim = { Nlim.lower - Nlim.dWh() / 2.,  Nlim.upper + Nlim.dWh() / 2., Nlim.n };
 	Elim = { Elim.lower - Elim.dWh() / 2.,  Elim.upper + Elim.dWh() / 2., Elim.n };
 
-	const size_t hsiSize = Nlim.n*Elim.n;
+	const size_t hsiSize = Nlim.n * Elim.n;
 	if(hsiEnd - hsiBegin < hsiSize)
 		throw std::runtime_error("makeHexsTopoFlatCuboidsGK(): small hsi buffer size");
 
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	const TransverseMercator proj(GKopts.e.Req*1000., GKopts.e.f, 1);
 
 	auto GKtoGeo = [&](const double N, double E) -> std::pair<double, double> {
 		std::pair<double, double> lb;
-		E = xFromGK(E, l0);
-		proj.Reverse(toDeg(l0), E*1000., N*1000., lb.second, lb.first);
+		E -= GKopts.xOffset;
+		proj.Reverse(toDeg(GKopts.l0), E * 1000., N * 1000., lb.second, lb.first);
 		lb.first = toRad(lb.first);
 		lb.second = toRad(lb.second);
 		return lb;
 	};
 
+	const auto& e = GKopts.e;
 	const double lowLevel = 0;
 
 	auto Kr = [&](const int Ni, const int Ei) {
@@ -275,7 +231,7 @@ size_t makeHexsTopoFlatCuboidsGK(const double l0, const Ellipsoid &e, limits Nli
 		
 //split dencity model to Hexahedrons
 template <class VectorIterator>
-size_t makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, limits Hlim,
+size_t makeHexs(const GKoptions &GKopts, limits Nlim, limits Elim, limits Hlim,
 	const vector<vector<double>> &dens, 
 	VectorIterator hsiBegin, VectorIterator hsiEnd) {
 	
@@ -285,20 +241,22 @@ size_t makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, l
 	// cout << "grid E (x): " << Elim << " " << Elim.d() << endl;
 	// cout << "grid N (y): " << Nlim << " " << Nlim.d() << endl;
 	
-	const size_t hsiSize = Hlim.n*Nlim.n*Elim.n;
+	const size_t hsiSize = Hlim.n * Nlim.n * Elim.n;
 	if(hsiEnd - hsiBegin < hsiSize)
 		throw std::runtime_error("makeHexs(): small hsi buffer size");
 
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	const TransverseMercator proj(GKopts.e.Req * 1000., GKopts.e.f, 1);
 
 	auto GKtoGeo = [&](const double N, double E) -> std::pair<double, double> {
 		std::pair<double, double> lb;
-		E = xFromGK(E, l0);
-		proj.Reverse(toDeg(l0), E*1000., N*1000., lb.second, lb.first);
+		E -= GKopts.xOffset;
+		proj.Reverse(toDeg(GKopts.l0), E * 1000., N * 1000., lb.second, lb.first);
 		lb.first = toRad(lb.first);
 		lb.second = toRad(lb.second);
 		return lb;
 	};
+
+	const auto& e = GKopts.e;
 
 	auto Kr = [&](const int Hi, const int Ni, const int Ei) {
 		Hexahedron h({
@@ -325,24 +283,25 @@ size_t makeHexs(const double l0, const Ellipsoid &e, limits Nlim, limits Elim, l
 }
 
 //calculate transpose gravity field operator on a single node
-void transFieldNode(Ellipsoid e, double l0, const vector<Dat3D::Element> psGK,
+void transFieldNode(
+	const GKoptions &GKopts, const vector<Dat3D::Element> psGK,
 	const vector<HexahedronWid>::const_iterator &hsBegin, const vector<HexahedronWid>::const_iterator &hsEnd, const vector<double>::iterator &resBegin,
-	const double dotPotentialRad) {
+	const double dotPotentialRad
+) {
 	vector<FieldPoint> fps(psGK.size());
-	const TransverseMercator proj(e.Req*1000., e.f, 1);
+	const TransverseMercator proj(GKopts.e.Req * 1000., GKopts.e.f, 1);
 	std::transform(psGK.cbegin(), psGK.cend(), fps.begin(), [&](const Dat3D::Element &el) {
 		double l, B;
-		double x = xFromGK(el.p.x, l0);
-		proj.Reverse(toDeg(l0), x*1000., el.p.y*1000., B, l);
+		double x = el.p.x - GKopts.xOffset;
+		proj.Reverse(toDeg(GKopts.l0), x * 1000., el.p.y * 1000., B, l);
 		l = toRad(l);
 		B = toRad(B);
-		return FieldPoint{ e.getPoint(B, l, el.p.z), e.getNormal(B, l), el.val };
+		return FieldPoint{ GKopts.e.getPoint(B, l, el.p.z), GKopts.e.getNormal(B, l), el.val };
 	});
 
 	//solve
-	gFieldInvSolver::getCUDAtransSolver(fps, dotPotentialRad)
-		->solve(&*hsBegin, &*hsEnd, resBegin);
-	std::transform(resBegin, resBegin + (hsEnd - hsBegin), resBegin, [](auto &v) {return G_CONST*v; });
+	gFieldInvSolver::getCUDAtransSolver(fps, dotPotentialRad)->solve(&*hsBegin, &*hsEnd, resBegin);
+	std::transform(resBegin, resBegin + (hsEnd - hsBegin), resBegin, [](auto &v) {return G_CONST * v; });
 }
 
 struct calcFieldNodeBase {
@@ -355,10 +314,11 @@ struct GeoNormOpts : calcFieldNodeBase {
 };
 struct GKNormOpts : calcFieldNodeBase { 
 	double l0;
-	GKNormOpts(const Ellipsoid &e, const double l0, boost::optional<Point> n = boost::optional<Point>{}) : calcFieldNodeBase(e, n), l0(l0) {}
+	double xOffset;
+	GKNormOpts(GKoptions &opts, boost::optional<Point> n = boost::optional<Point>{}) : calcFieldNodeBase(opts.e, n), l0(opts.l0), xOffset(opts.xOffset) {}
 };
 struct GeoNormOptsFlat : GKNormOpts {
-	GeoNormOptsFlat(const Ellipsoid &e, const double l0, boost::optional<Point> n = boost::optional<Point>{}) : GKNormOpts(e, l0, n) {}
+	GeoNormOptsFlat(GKoptions &opts, boost::optional<Point> n = boost::optional<Point>{}) : GKNormOpts(opts, n) {}
 };
 using calcFieldNodeOpts = boost::variant<GeoNormOpts, GKNormOpts, GeoNormOptsFlat>;
 
@@ -383,7 +343,7 @@ void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> 
 				p.y += MOVE_POINT_EPS;
 				p.z += MOVE_POINT_EPS;
 				double l, B;
-				double x = xFromGK(p.x, opts.l0);
+				const double x = p.x - opts.xOffset;
 				proj.Reverse(toDeg(opts.l0), x*1000., p.y*1000., B, l);
 				l = toRad(l);
 				B = toRad(B);
@@ -407,7 +367,7 @@ void calcFieldNode(const calcFieldNodeOpts &opts, std::unique_ptr<gFieldSolver> 
 			const TransverseMercator proj(opts.e.Req*1000., opts.e.f, 1);
 			for (size_t i = 0; i < fp.size(); ++i) {
 				const Dat3D::Point &p = fp[i];
-				Point p0 = GeoToGK(proj, opts.l0, p.y, p.x, p.z);
+				Point p0 = GeoToGK(proj, GKoptions{ opts.e, opts.l0, opts.xOffset  }, p.y, p.x, p.z);
 				p0.x += MOVE_POINT_EPS;
 				p0.y += MOVE_POINT_EPS;
 				p0.z += MOVE_POINT_EPS;
@@ -491,7 +451,7 @@ public:
 		}
 	}
 
-	void calcTrans(Ellipsoid e, double l0, vector<gElements::base> &qs, const Dat3D &dat, vector<double> &result, const double dotPotentialRad) {
+	void calcTrans(const GKoptions &GKopts, vector<gElements::base> &qs, const Dat3D &dat, vector<double> &result, const double dotPotentialRad) {
 		if (isRoot())
 			cout << "Computing nodes: " << gridSize - 1 << endl;
 
@@ -503,7 +463,7 @@ public:
 				if (!task.size()) break;
 				cout << "Task accepted " << ++cnt << " size: " << task.size() << endl;
 				vector<double> result(task.size());
-				transFieldNode(e, l0, dat.es, task.cbegin(), task.cend(), result.begin(), dotPotentialRad);
+				transFieldNode(GKopts, dat.es, task.cbegin(), task.cend(), result.begin(), dotPotentialRad);
 				pool.submit(result);
 			}
 		}
@@ -545,8 +505,10 @@ int grafenMain(int argc, char *argv[]) {
 		GrafenArgs inp(argc, argv, cs.isRoot());
 
 		const size_t qAm = getHexAm(inp.Nlim.n, inp.Elim.n, inp.Hlim.n + (inp.withTopo? 1 : 0));
-		cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";
-		cout << "Elements: " << qAm << endl;
+		if(cs.isRoot()) {
+			cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";
+			cout << "Elements: " << qAm << endl;
+		}
 		gElementsShared &qss = cs.initShared(qAm);//for direct solver. Should not actually allocate memory untill resize().
 		gElements qs; //for transpose solver
 
@@ -559,9 +521,9 @@ int grafenMain(int argc, char *argv[]) {
 			cout << "Allocated." << endl;
 			size_t hsiOffest = 0;
 			if(inp.withTopo) {
-				hsiOffest += makeHexsTopoFlatCuboidsGK(inp.l0, inp.refEllipsoid, inp.Nlim, inp.Elim, inp.topoHeights, inp.topoDens, hsi.begin() + hsiOffest, hsi.end());
+				hsiOffest += makeHexsTopoFlatCuboidsGK(inp.GKopts, inp.Nlim, inp.Elim, inp.topoHeights, inp.topoDens, hsi.begin() + hsiOffest, hsi.end());
 			}
-			hsiOffest += makeHexs(inp.l0, inp.refEllipsoid, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, hsi.begin() + hsiOffest, hsi.end()); 
+			hsiOffest += makeHexs(inp.GKopts, inp.Nlim, inp.Elim, inp.Hlim, inp.dens, hsi.begin() + hsiOffest, hsi.end()); 
 
 			if(hsiOffest != hsi.size())
 				throw std::runtime_error("Preprocessing: hsi was incorrect");
@@ -571,18 +533,18 @@ int grafenMain(int argc, char *argv[]) {
 		};
 		
 		//prepocessing for direct solver
-		if (!inp.trasSolver && cs.isLocalRoot()) {
+		if (!inp.transSolver && cs.isLocalRoot()) {
 			makeHexsPreprocess(qss);
 		}
 		//prepocessing for transpose solver
-		else if (inp.trasSolver && cs.isRoot()) {
+		else if (inp.transSolver && cs.isRoot()) {
 			makeHexsPreprocess(qs);
 		}
 		cs.Barrier();
-		const size_t qSize = inp.trasSolver ? qs.size() : qss.size();
+		const size_t qSize = inp.transSolver ? qs.size() : qss.size();
 		cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << " (" << qSize << " elements)" << endl;
 
-		if (inp.trasSolver) {
+		if (inp.transSolver) {
 			// ----- TRANSPOSE SOLVER
 			vector<double> res;
 			if (cs.isRoot()) {
@@ -590,7 +552,7 @@ int grafenMain(int argc, char *argv[]) {
 				res.resize(qs.size());
 			}
 			Stopwatch tmr;
-			cs.calcTrans(inp.refEllipsoid, inp.l0, qs, inp.dat, res, inp.dotPotentialRad);
+			cs.calcTrans(inp.GKopts, qs, inp.dat, res, inp.dotPotentialRad);
 			if (cs.isRoot()) {
 				cout << "Computing finished: " << tmr.stop() << "sec." << endl << endl;
 				const size_t layersOffset = inp.withTopo? 1 : 0;
@@ -620,7 +582,7 @@ int grafenMain(int argc, char *argv[]) {
 			//set approximate size of buffer
 			cs.triBufferSize = triBufferSize(inp.Nlim, inp.Elim, inp.withTopo? limits{inp.Hlim.lower, inp.Hlim.upper + inp.Hlim.d(), inp.Hlim.n + 1} : inp.Hlim, inp.dotPotentialRad);
 			//do the job
-			cs.calcField(GKNormOpts{ inp.refEllipsoid, inp.l0 }, qss, inp.dat, inp.dotPotentialRad);
+			cs.calcField(GKNormOpts{ inp.GKopts }, qss, inp.dat, inp.dotPotentialRad);
 			if (cs.isRoot()) {
 				cout << "Computing finished: " << tmr.stop() << "sec." << endl << endl;
 				if (!inp.grdFile) inp.dat.write(inp.dat2D);
@@ -637,117 +599,6 @@ int grafenMain(int argc, char *argv[]) {
 	return 0;
 }
 
-
-template <class VAlloc>
-void saveAsDat(const vector<HexahedronWid, VAlloc> &hsi) {
-	Dat3D dat;
-	for (int i = 0; i < hsi.size(); ++i)
-		for (int pi = 0; pi < 8; ++pi)
-			dat.es.push_back({ { hsi[i].p[pi].x, hsi[i].p[pi].y, hsi[i].p[pi].z}, hsi[i].dens });
-	dat.write("shape.dat");
-}
-
-int topogravMain(int argc, char *argv[]) {
-
-	const auto& sectionStopwatch = [](const string& sectionName, const std::function<void(void)>& section, const bool print = true) {
-		if(!print) {
-			section();
-			return;
-		}
-		cout << sectionName << " started" << endl;
-		Stopwatch tmr;
-		tmr.start();
-		section();
-		const double time = tmr.stop();
-		cout << sectionName << " finished: " << time << "sec." << endl;
-	};
-
-	try {
-		TopogravArgs inp(argc, argv);
-		ClusterSolver cs(inp.gpuIdMap);
-		if(cs.isRoot()) {
-			cout << "GRAFEN Topograv" << endl;
-			cout << (inp.flatMode? "FLAT" : "SPHERICAL") << " mode" << endl;
-			cout << "GPUs: " << cuSolver::getGPUnum() << endl;
-		}
-		Grid topoGrid(inp.topoGridFname);
-		topoGrid.setBlanksTo(topoGrid.mean());
-
-		const size_t qAm = topoGrid.nCol * topoGrid.nRow;
-		cout << "Elements: " << qAm << endl;
-		cout << (qAm * sizeof(gElements::base) + MB - 1) / MB << "MB required. ";
-		gElementsShared &qss = cs.initShared(qAm); //for direct solver. Should not actually allocate memory untill resize().
-		cout << "Allocated." << endl;
-
-		if(inp.flatMode && inp.gridsInGK) {
-			throw std::runtime_error("Mode not supported");
-		}
-
-		//preprocessing
-		if(cs.isLocalRoot()) 
-			sectionStopwatch("Preprocessing", [&](){ 
-				inp.flatMode
-					? makeHexsTopoFlatCuboids(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss)
-					: inp.gridsInGK
-						? makeHexsTopoGK(inp.l0, inp.refEllipsoid, topoGrid, inp.dens, qss)
-						: makeHexsTopoGeo(inp.refEllipsoid, topoGrid, inp.dens, qss);
-			});
-		if(cs.isRoot()) {
-			const size_t qSize = qss.size();
-			cout << "Real size: " << (qSize * sizeof(gElements::base) + MB - 1) / MB << "MB" << endl;
-			const double meanDens = [&](){
-					double sum = 0;
-					for(auto &q: qss) sum += q.dens;
-					return sum;
-				}() / double(qss.size());
-			cout << "Mean density: " << meanDens << endl;
-		}
-		cs.Barrier();
-
-		/*
-		Dat2D td = GDconv::toDat(topoGrid);
-		const TransverseMercator proj(inp.refEllipsoid.Req*1000., inp.refEllipsoid.f, 1);
-		td.forEach([&](auto &el) {
-			const auto& t = GeoToGK(proj, inp.l0, el.p.y, el.p.x, 0);
-			el.p.x = t.x;
-			el.p.y = t.y;
-		});
-		td.write("tt.dat");
-		return 0;
-		*/
-/*
-		saveAsDat(qss);
-		return 0;
-*/
-		//computation
-		Dat3D fieldDat = GDconv::toDat3D(topoGrid);
-		sectionStopwatch("Computing", [&]() {
-			//set approximate size of buffer
-			cs.triBufferSize = inp.pprr < 1e-6? 0 : int(qss.size() / 4);
-			//do the job
-			cs.calcField(
-				inp.flatMode
-					? calcFieldNodeOpts{ GeoNormOptsFlat{ inp.refEllipsoid, inp.l0, inp.normal } }
-					:  inp.gridsInGK
-						? calcFieldNodeOpts{ GKNormOpts{ inp.refEllipsoid, inp.l0, inp.normal } }
-						: calcFieldNodeOpts{ GeoNormOpts{ inp.refEllipsoid, inp.normal } }
-			, qss, fieldDat, inp.pprr);
-		}, cs.isRoot());
-
-		//save result
-		if (cs.isRoot()) {
-			GDconv::toGrd(fieldDat, topoGrid.nCol, topoGrid.nRow).Write(inp.gravGridFname);
-		}
-
-	} catch (std::exception &ex) {
-		cout << "Global exception: " << ex.what() << endl;
-		return 1;
-	}
-	cout << "Done" << endl;
-	return 0;
-}
-
 int main(int argc, char *argv[]) {
 	return grafenMain(argc, argv);
-	// return topogravMain(argc, argv);
 }

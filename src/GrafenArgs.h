@@ -18,18 +18,23 @@ using std::cout;
 using std::endl;
 using std::istringstream;
 
+struct GKoptions {
+	Ellipsoid e { EARTH_R_EQ, EARTH_R_PL };
+	double l0 {};
+	double xOffset {};
+};
+
 class GrafenArgs {
 public:
 	limits Elim;
 	limits Nlim;
 	limits Hlim;
-	Ellipsoid refEllipsoid{ EARTH_R_EQ, EARTH_R_PL };
-	double l0;
+
+	GKoptions GKopts;
 	std::vector<std::vector<double>> dens;
 	std::vector<double> topoHeights;
 	std::vector<double> topoDens;
 	Dat3D dat;	//calc field here
-	bool noGK;
 	double dotPotentialRad = 1e8;
 	std::vector<std::string> fnames; //dens fnames
 	std::string topoDensFname;
@@ -39,7 +44,7 @@ public:
 	int grdRows = 0;
 
 	bool noInvFileOrder = false;
-	bool trasSolver = false;
+	bool transSolver = false;
 	bool dat2D = false;
 	bool grdFile = false;
 	bool withTopo = false;
@@ -61,6 +66,7 @@ public:
 
 		// [-Rpol] *number*
 		// [-Req] *number*
+		// [-xOffset] *number*				*** x offset for GK projection
 		// With topography:
 		// -topoHeightGrd7 *string*
 		// -fieldOnTopo						*** calc field on topography
@@ -69,7 +75,7 @@ public:
 		InputParser ip(argc, argv);
 
 		noInvFileOrder = ip.exists("noInvFileOrder");
-		trasSolver = ip.exists("transposeSolver");
+		transSolver = ip.exists("transposeSolver");
 		withTopo = ip.exists("topoHeightGrd7");
 
 		//Hlim
@@ -84,8 +90,8 @@ public:
 			Grid g(fnames[0]);
 			Elim = {g.xLL, g.xLL + (g.nCol-1)*g.xSize, g.nCol};
 			Nlim = {g.yLL, g.yLL + (g.nRow-1)*g.ySize, g.nRow};
-			if(fnames.size() < Hlim.n)
-				throw std::runtime_error("Not enough density files have been found");
+			if(fnames.size() != Hlim.n + (!!withTopo))
+				throw std::runtime_error("Incorrect number of density files");
 		} else {
 			ip["Efrom"] >> Elim.lower;
 			ip["Eto"] >> Elim.upper;
@@ -97,15 +103,23 @@ public:
 
 		if(withTopo) {
 			if(dbgMsg) cout << "Topo mode selected. Upper layer (the last *.grd file) is treated as topography layer." << endl;
-			Hlim.n -= 1;
 			topoDens = dens.back();
 			dens.pop_back();
 			topoDensFname = fnames.back();
 			fnames.pop_back();
 		}
 
-		ip["l0"] >> l0;
-		l0 = toRad(l0);
+		ip["l0"] >> GKopts.l0;
+		GKopts.l0 = toRad(GKopts.l0);
+
+		if(ip.exists("xOffset")) {
+			double xOffset;
+			ip["xOffset"] >> xOffset;
+			GKopts.xOffset = xOffset;
+		} else {
+			const int zone = round(GKopts.l0 / toRad(6.)) + 1;
+			GKopts.xOffset = zone * 1000. + 500.;
+		}
 
 		if(ip.exists("densLayers")) {
 			std::string fname;
@@ -155,20 +169,19 @@ public:
 			dat2D = !ip.exists("saveDatAs3D");
 		} else dat.read(datFname);
 
-		if (ip.exists("DPR"))
+		if (ip.exists("DPR")) {
 			ip["DPR"] >> dotPotentialRad;
-		else {
+			if(dbgMsg) cout << "Point potential replace radius: " << dotPotentialRad << endl;
+		} else {
 			dotPotentialRad = AutoReplRadi::get(1e-3, Elim.dWh(), Nlim.dWh(), Hlim.d());
-			if(dbgMsg) cout << "Deduced dot potential replace radius: " << dotPotentialRad << endl;
+			if(dbgMsg) cout << "Deduced point potential replace radius: " << dotPotentialRad << endl;
 		}
 		
 		if(ip.exists("Req") && ip.exists("Rpol")) {
 			double Req, Rpol;
 			ip["Req"] >> Req;
 			ip["Rpol"] >> Rpol;
-			refEllipsoid = Ellipsoid(Req, Rpol);
-		} else {
-			if(dbgMsg) cout << "Using default reference ellipsoid with Rpol=" << refEllipsoid.Rpl << " and Req=" << refEllipsoid.Req << endl;
+			GKopts.e = Ellipsoid(Req, Rpol);
 		}
 
 		if(withTopo) {
@@ -193,7 +206,10 @@ public:
 			cout << "Elim: " << Elim << endl;
 			cout << "Nlim: " << Nlim << endl;
 			cout << "Hlim: " << Hlim << endl;
-			cout << "l0: " << l0 << endl;
+			cout << "l0: " << GKopts.l0 << endl;
+			cout << "xOffset: " << GKopts.xOffset << endl;
+			cout << "Req: " << GKopts.e.Req << endl;
+			cout << "Rpol: " << GKopts.e.Rpl << endl;
 			cout << "inDat x range: " << dat.xMin() << " " << dat.xMax() << endl;
 			cout << "inDat y range: " << dat.yMin() << " " << dat.yMax() << endl;
 		}

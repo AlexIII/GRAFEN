@@ -6,3 +6,4 @@ x64
 grafen_rocm
 *.hip.*
 grafen_cuda
+hipify-perl

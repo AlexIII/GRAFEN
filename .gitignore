@@ -7,4 +7,4 @@ deps
 .vscode
 float_test
 mag_elip
-depth_topograv
+depth_topograv*
