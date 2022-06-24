@@ -114,6 +114,8 @@ public:
 	}
 
 	void solve(const HexahedronWid * const qbegin, const HexahedronWid * const qend, const std::vector<double>::iterator &resBegin) override {
+		const bool preciseOnly = dotPotentialRad < 0;
+
 		const size_t taskSz = qend - qbegin;
 		std::vector<MassPoint> qtmp(taskSz);
 		transform(qbegin, qend, qtmp.begin(), [](auto &h) {return h.getMassPoint(); });
@@ -140,9 +142,11 @@ public:
 				double sum = 0;
 				for (size_t i = 0; i < pnSz; ++i) {
 					const FieldPoint &fp = fps[i];
-					if ((mp - fp.p).eqNorm() <= rad)
+					if (preciseOnly || (mp - fp.p).eqNorm() <= rad) {
 						sum += -fp.v*intHexTr(fp.p, fp.n, h);
-					else sum += gMassPoint(fp.p, fp.n, fp.v, mp);
+					} else {
+						sum += gMassPoint(fp.p, fp.n, fp.v, mp);
+					}
 				}
 				return sum;
 			});
@@ -191,7 +195,7 @@ public:
 
 	double solve(const Point &p0, const Point &n0) override {
 		double res = 0;
-		const bool preciseOnly = dotPotentialRad < -1e-6;
+		const bool preciseOnly = dotPotentialRad < 0;
 
 		if (!preciseOnly) {
 			//rough computing
