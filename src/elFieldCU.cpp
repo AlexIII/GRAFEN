@@ -430,9 +430,7 @@ public:
 	}
 
 	void calcField(const calcFieldNodeOpts &opts, gElementsShared &qs, Dat3D &dat, double dotPotentialRad) {
-		//cout << "Dot potential replace radius: " << dotPotentialRad << endl;
-		if (isRoot())
-			cout << "Computing nodes: " << gridSize - 1 << endl;
+		if (isRoot()) cout << "Computing nodes: " << gridSize - 1 << endl;
 
 		size_t qSize = qs.size();
 		if (myId == 1) send(qSize, 0);
@@ -446,7 +444,7 @@ public:
 			const Qiter qbegin = qs.begin() + i;
 			const Qiter qend = qs.begin() + std::min(i + partSize, qs.size());
 
-			cout << ":::part " << part + 1 << " out of " << parts << "::: size: " << qend - qbegin << endl;
+			if(isRoot()) cout << ":::part " << part + 1 << " out of " << parts << "::: size: " << qend - qbegin << endl;
 			calcWithPool(opts, qbegin, qend, dat, dotPotentialRad);
 		}
 	}
@@ -500,8 +498,10 @@ int grafenMain(int argc, char *argv[]) {
 	try {
 		ClusterSolver cs;
 
-		//gElements qs;
-		cout << "GPUs: " << cuSolver::getGPUnum() << endl;
+		if(cs.isRoot()) {
+			cout << "GPUs: " << cuSolver::getGPUnum() << endl;
+			cout << "Workers: " << cs.gridSize - 1 << endl;
+		}
 		GrafenArgs inp(argc, argv, cs.isRoot());
 
 		const size_t qAm = getHexAm(inp.Nlim.n, inp.Elim.n, inp.Hlim.n + (inp.withTopo? 1 : 0));

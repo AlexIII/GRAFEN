@@ -178,15 +178,16 @@ class gFieldCUDAsolver : public gFieldSolver {
 public:
 
 	gFieldCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
-		const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
+			const double dotPotentialRad, const int tirBufSz) : dotPotentialRad(dotPotentialRad) {
+		const bool preciseOnly = dotPotentialRad < 0;
+		if (preciseOnly) cout << "Precise computing" << endl;
+		else cout << "Adaptive precision computing" << endl;
 		qsCUDA.assign(qbegin, qend);
-		qsCUDAprec.resize(tirBufSz);
+		cout << "-- STAGE 1 --" << endl;
+		if(!preciseOnly) qsCUDAprec.resize(tirBufSz);
 		std::vector<MassPoint> tmp(qend - qbegin);
 		transform(qbegin, qend, tmp.begin(), [](auto &h) {return h.getMassPoint(); });
 		mpsCUDA.assign(&*tmp.cbegin(), &*tmp.cend());
-		if (dotPotentialRad < -1e-6) cout << "Precise computing" << endl;
-		else if (dotPotentialRad > 1e-6) cout << "Adaptive precision computing" << endl;
-		else cout << "Imprecise computing" << endl;
 	}
 
 	~gFieldCUDAsolver() {
@@ -240,8 +241,12 @@ private:
 	const double dotPotentialRad;
 };
 
-std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(const HexahedronWid* const qbegin, const HexahedronWid* const qend,
-	const double dotPotentialRad, const int tirBufSz) {
+std::unique_ptr<gFieldSolver> gFieldSolver::getCUDAsolver(
+	const HexahedronWid* const qbegin,
+	const HexahedronWid* const qend,
+	const double dotPotentialRad,
+	const int tirBufSz
+) {
 	return std::unique_ptr<gFieldSolver>(new gFieldCUDAsolver(qbegin, qend, dotPotentialRad, tirBufSz));
 }
 

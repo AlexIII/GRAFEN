@@ -57,6 +57,15 @@ public:
 		return tmp;
 	}
 
+	template<typename T>
+	bool getIfExists(const std::string &key, T& val) {
+		if(exists(key)) {
+			(*this)[key] >> val;
+			return true;
+		}
+		return false;
+	}
+
 private:
 	std::map<std::string,std::string> inp;
 	std::istringstream retVal;

@@ -54,9 +54,9 @@ public:
 		// OR
 		//		-grd7 file.grd				*** input points and output field
 		// [-Hf (val)]
-		// -Hfrom (val) -Hto (val) -Hn (val) -l0 (val) 
+		// -Hfrom (val) -Hto (val) -Hn (val) -l0 (val) 	*** Hn - number of layer NOT including the topography layer
 		// [-dens (directory)] 				*** (output for transposed solver)
-		// [-toRel] 
+		// [-toRel] 						*** subtract layer's mean from that layer density (NOT including the topography layer)
 		// [-densVal (val)] 
 		// [-DPR (val)] 					*** point potential replace radius
 		// if "-dens" is not specified: -Efrom -Eto -En -Nfrom -Nto -Nn [-densLayers (file.dat)]
@@ -155,7 +155,7 @@ public:
 
 		double Hf = 0;
 		if(grdFile) {
-			ip["Hf"] >> Hf;
+			ip.getIfExists("Hf", Hf);
 			Grid g(datFname);
 			grdCols = g.nCol;
 			grdRows = g.nRow;
@@ -197,8 +197,7 @@ public:
 		} 
 
 		if(ip.exists("toRel")) {
-			for(auto& d: dens) subtructMean(d);
-			subtructMean(topoDens);
+			for(auto& d: dens) subtractMean(d);
 		}
 
 		if(dbgMsg) {
@@ -243,9 +242,9 @@ private:
 	const std::string ext = ".grd";
 
 	void getDensFiles(const std::string dirName) {
-		std::vector<std::string> tmp = getFileNamesInFolder(dirName);
+		const auto& fnamesInDir = getFileNamesInFolder(dirName);
 		fnames.clear();
-		for(auto &i : tmp) {
+		for(auto &i : fnamesInDir) {
 			if(i.length() > ext.length() && !i.compare(i.length()-ext.length(), std::string::npos, ext))
 				fnames.push_back(dirName+"/"+i);
 		}
@@ -264,7 +263,7 @@ private:
 		exit(1);
 	}
 
-	static void subtructMean(std::vector<double> &v) {
+	static void subtractMean(std::vector<double> &v) {
 		double med = 0;
 		for(auto &d : v)
 			med += d;
