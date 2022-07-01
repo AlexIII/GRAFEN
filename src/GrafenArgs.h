@@ -14,12 +14,15 @@
 #include "autoReplRadi.h"
 #include "GrdDatConv.h"
 
+#define EARTH_R_EQ_KM_KRAS 6378.245
+#define EARTH_R_PL_KM_KRAS 6356.863
+
 using std::cout;
 using std::endl;
 using std::istringstream;
 
 struct GKoptions {
-	Ellipsoid e { EARTH_R_EQ, EARTH_R_PL };
+	Ellipsoid e { EARTH_R_EQ_KM_KRAS, EARTH_R_PL_KM_KRAS };
 	double l0 {};
 	double xOffset {};
 };
@@ -180,7 +183,7 @@ public:
 			double Req, Rpol;
 			ip["Req"] >> Req;
 			ip["Rpol"] >> Rpol;
-			GKopts.e = Ellipsoid(Req, Rpol);
+			GKopts.e = Ellipsoid{Req, Rpol};
 		}
 
 		if(withTopo) {

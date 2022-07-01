@@ -21,9 +21,6 @@
 using std::abs;
 using std::sqrt;
 
-#define EARTH_R_EQ 6378.245		//equatorial radius in km
-#define EARTH_R_PL 6356.863		//polar radius in km
-
 #if defined(__HIPCC__)
 #include <hip/hip_runtime.h>
 #endif

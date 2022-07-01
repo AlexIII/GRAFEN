@@ -71,6 +71,10 @@ __host__ __device__ double gMassPoint(const Point &p0, const Point &n0, const do
 	return mass*(n0 ^ (mp - p0)) / (d*d*d);
 }
 
+__host__ __device__ double gMassPoint(const Point &p0, const Point &n0, const double mass, const Point &mp, const double mp_p0_dist) {
+	return mass*(n0 ^ (mp - p0)) / (mp_p0_dist * mp_p0_dist * mp_p0_dist);
+}
+
 __host__ __device__ double intHexTr(const Point &p0, const Point &n0, const HexahedronWid &h) {
 	double sum = 0;
 	for (int i = 0; i < 12; ++i)
@@ -142,10 +146,11 @@ public:
 				double sum = 0;
 				for (size_t i = 0; i < pnSz; ++i) {
 					const FieldPoint &fp = fps[i];
-					if (preciseOnly || (mp - fp.p).eqNorm() <= rad) {
+					const auto dist = (mp - fp.p).eqNorm();
+					if (preciseOnly || dist <= rad) {
 						sum += -fp.v*intHexTr(fp.p, fp.n, h);
 					} else {
-						sum += gMassPoint(fp.p, fp.n, fp.v, mp);
+						sum += gMassPoint(fp.p, fp.n, fp.v, mp, dist);
 					}
 				}
 				return sum;
@@ -208,12 +213,14 @@ public:
 
 			res += thrust::inner_product(qsCUDA.begin(), qsCUDA.end(), mpsCUDA.begin(), 0., thrust::plus<double>(),
 				[=] __device__(const HexahedronWid& h, const MassPoint &mp)->double {
-				if (impreciseOnly || (mp - p0).eqNorm() > rad)
-					return gMassPoint(p0, n0, mp.mass, mp);
-				hPrec[atomicAdd(triSzDevPtr, 1)] = h;
-				return 0;
+					const auto dist = (mp - p0).eqNorm();
+					if (impreciseOnly || dist > rad)
+						return gMassPoint(p0, n0, mp.mass, mp, dist);
+					hPrec[atomicAdd(triSzDevPtr, 1)] = h;
+					return 0;
 			});
-			//if (triSz != 0 && triSz >= qsCUDAprec.size()) throw runtime_error("Not enough memory for precise elemetns. Needed: " + std::to_string(triSz) + ", available: " + std::to_string(qsCUDAprec.size()) + ".");
+			if (triSz != 0 && triSz >= qsCUDAprec.size()) 
+				throw runtime_error("Not enough memory for precise elemetns. Needed: " + std::to_string(triSz) + ", available: " + std::to_string(qsCUDAprec.size()) + ".");
 		} else {
 			triSz = qsCUDA.size();
 		}
@@ -237,7 +244,7 @@ private:
 	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
 	thrust::device_vector<MassPoint> mpsCUDA;				//ro
 	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
-	cuVar<int> triSz;										//rw
+	cuVar<int> triSz;							¬			//rw
 	const double dotPotentialRad;
 };
 
