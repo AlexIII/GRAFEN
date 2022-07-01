@@ -49,7 +49,7 @@ int getHexAm(const int nx, const int ny, const int nz) {
 
 //estimate approximate buffer size for the Hexahedrons that can't be replaced by a singular source
 int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, const double r) {
-	auto f = [&](const limits &lim)->int {return (int)ceil(1.62*r*double(lim.n) / lim.width()); };
+	auto f = [&](const limits &lim)->int {return (int)ceil(3*r*double(lim.n) / lim.width()); };
 	const int v1 = f(Nlim)*f(Elim)*f(Hlim);
 	const int v2 = Nlim.n*Elim.n*Hlim.n;
 	return std::min(v1, v2);
