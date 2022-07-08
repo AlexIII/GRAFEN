@@ -220,7 +220,7 @@ public:
 					return 0;
 			});
 			if (triSz != 0 && triSz >= qsCUDAprec.size()) 
-				throw runtime_error("Not enough memory for precise elemetns. Needed: " + std::to_string(triSz) + ", available: " + std::to_string(qsCUDAprec.size()) + ".");
+				throw std::runtime_error("Not enough memory for precise elemetns. Needed: " + std::to_string(triSz) + ", available: " + std::to_string(qsCUDAprec.size()) + ".");
 		} else {
 			triSz = qsCUDA.size();
 		}
@@ -244,7 +244,7 @@ private:
 	thrust::device_vector<HexahedronWid> qsCUDA;			//ro
 	thrust::device_vector<MassPoint> mpsCUDA;				//ro
 	thrust::device_vector<HexahedronWid> qsCUDAprec;		//rw
-	cuVar<int> triSz;							¬			//rw
+	cuVar<int> triSz;							 			//rw
 	const double dotPotentialRad;
 };
 

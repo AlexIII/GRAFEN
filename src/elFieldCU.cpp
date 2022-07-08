@@ -49,10 +49,12 @@ int getHexAm(const int nx, const int ny, const int nz) {
 
 //estimate approximate buffer size for the Hexahedrons that can't be replaced by a singular source
 int triBufferSize(const limits &Nlim, const limits &Elim, const limits &Hlim, const double r) {
-	auto f = [&](const limits &lim)->int {return (int)ceil(3*r*double(lim.n) / lim.width()); };
-	const int v1 = f(Nlim)*f(Elim)*f(Hlim);
-	const int v2 = Nlim.n*Elim.n*Hlim.n;
-	return std::min(v1, v2);
+	return std::max(
+		size_t(75),
+		std::min(Nlim.n, 1 + size_t(5 * r / Nlim.d())) * 
+		std::min(Elim.n, 1 + size_t(5 * r / Elim.d())) * 
+		std::min(Hlim.n, 1 + size_t(2 * r / Hlim.d()))
+	);
 }
 
 //{B in deg, l in deg, z} -> {E, N, z} in km, l0 in Rad
@@ -581,6 +583,7 @@ int grafenMain(int argc, char *argv[]) {
 			tmr.start();
 			//set approximate size of buffer
 			cs.triBufferSize = triBufferSize(inp.Nlim, inp.Elim, inp.withTopo? limits{inp.Hlim.lower, inp.Hlim.upper + inp.Hlim.d(), inp.Hlim.n + 1} : inp.Hlim, inp.dotPotentialRad);
+			cout << "triBufferSize = " << cs.triBufferSize << " " << 100 * cs.triBufferSize / qSize << "%" << endl;
 			//do the job
 			cs.calcField(GKNormOpts{ inp.GKopts }, qss, inp.dat, inp.dotPotentialRad);
 			if (cs.isRoot()) {
