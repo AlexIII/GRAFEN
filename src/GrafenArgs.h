@@ -136,6 +136,7 @@ public:
 			ip["densVal"] >> tmp;
 			std::vector<double> l(Elim.n*Nlim.n, tmp);
 			dens = std::vector<std::vector<double>>(Hlim.n, l);
+			topoDens = l;
 			if(dbgMsg) cout << "All densities are set to " << tmp << endl;
 		}
 
@@ -193,6 +194,8 @@ public:
 			checkGridSize(g);
 			g.setBlanksTo(g.mean());
 			topoHeights = g.data;
+			for(auto &val: topoHeights)
+				val += Hf;
 
 			if(ip.exists("fieldOnTopo")) {
 				dat.set(GDconv::toDat(g));	
