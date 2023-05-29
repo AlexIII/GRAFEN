@@ -2,7 +2,7 @@
 
 ## Description
 
-This software is supplimentary material for the paper Byzov D., Martyshko P., Chernoskutov A. Computationally Effective Modeling of Self-Demagnetization and Magnetic Field for Bodies of Arbitrary Shape Using Polyhedron Discretization
+<img width=400 align="right" src="https://github.com/AlexIII/GRAFEN/assets/10047074/f2b2ef09-80aa-40b8-b18d-5eda777fe173" /> This software is supplimentary material for the paper Byzov D., Martyshko P., Chernoskutov A. Computationally Effective Modeling of Self-Demagnetization and Magnetic Field for Bodies of Arbitrary Shape Using Polyhedron Discretization
 
 ## Dependencies (Linux + ROCm)
 
